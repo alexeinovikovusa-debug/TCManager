@@ -30,6 +30,13 @@ jobs:
           cp fixes/MainActivity.kt tc_manager/app/src/main/java/com/example/tcmanager/MainActivity.kt
           cp fixes/AppDatabase.kt tc_manager/app/src/main/java/com/example/tcmanager/data/AppDatabase.kt
 
+      - name: Check source files
+        run: |
+          echo "=== MainActivity.kt ==="
+          head -80 tc_manager/app/src/main/java/com/example/tcmanager/MainActivity.kt
+          echo "=== AppDatabase.kt ==="
+          head -80 tc_manager/app/src/main/java/com/example/tcmanager/data/AppDatabase.kt
+
       - name: Build APK
         working-directory: tc_manager
         run: gradle assembleDebug --no-daemon
