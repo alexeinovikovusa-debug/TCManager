@@ -23,7 +23,7 @@ jobs:
           gradle-version: '8.10.2'
 
       - name: Extract project
-        run: unzip -q TCManager_cloud_build_final14.zip -d .
+        run: unzip -q TCManager_cloud_build_jvm17_final14.zip -d .
 
       - name: Build APK
         working-directory: tc_manager
