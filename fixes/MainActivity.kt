@@ -810,7 +810,7 @@ fun TenantsScreen(
                     Text(
                         complex.name,
                         style = MaterialTheme.typography.titleMedium
-                    }
+                    )
                 }
             }
         }
