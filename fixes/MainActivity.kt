@@ -44,49 +44,90 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
 
-// Редактируйте даты проверок здесь: комплекс -> месяц -> дата.
+private data class InspectionSchedule(
+    val date: String,
+    val details: List<String> = emptyList()
+)
+
+// Редактируйте расписание проверок здесь: комплекс -> месяц -> дата и детали.
 private val INSPECTION_DATES_BY_COMPLEX = mapOf(
     "Меркурий" to mapOf(
-        "Январь" to "15.01.2026",
-        "Февраль" to "12.02.2026",
-        "Март" to "12.03.2026",
-        "Апрель" to "16.04.2026",
-        "Май" to "14.05.2026",
-        "Июнь" to "11.06.2026",
-        "Июль" to "16.07.2026",
-        "Август" to "13.08.2026",
-        "Сентябрь" to "17.09.2026",
-        "Октябрь" to "15.10.2026",
-        "Ноябрь" to "12.11.2026",
-        "Декабрь" to "17.12.2026"
+        "Январь" to InspectionSchedule("15.01.2026"),
+        "Февраль" to InspectionSchedule("12.02.2026"),
+        "Март" to InspectionSchedule("12.03.2026"),
+        "Апрель" to InspectionSchedule("16.04.2026"),
+        "Май" to InspectionSchedule("14.05.2026"),
+        "Июнь" to InspectionSchedule("11.06.2026"),
+        "Июль" to InspectionSchedule("16.07.2026"),
+        "Август" to InspectionSchedule("13.08.2026"),
+        "Сентябрь" to InspectionSchedule("17.09.2026"),
+        "Октябрь" to InspectionSchedule("15.10.2026"),
+        "Ноябрь" to InspectionSchedule("12.11.2026"),
+        "Декабрь" to InspectionSchedule("17.12.2026")
     ),
     "Континент" to mapOf(
-        "Январь" to "20.01.2026",
-        "Февраль" to "17.02.2026",
-        "Март" to "17.03.2026",
-        "Апрель" to "21.04.2026",
-        "Май" to "19.05.2026",
-        "Июнь" to "16.06.2026",
-        "Июль" to "21.07.2026",
-        "Август" to "18.08.2026",
-        "Сентябрь" to "22.09.2026",
-        "Октябрь" to "20.10.2026",
-        "Ноябрь" to "17.11.2026",
-        "Декабрь" to "15.12.2026"
+        "Январь" to InspectionSchedule(
+            date = "20.01.2026",
+            details = listOf("Этаж и очередь", "Паркинг", "Цоколь", "Арендатор «Fun City»")
+        ),
+        "Февраль" to InspectionSchedule(
+            date = "17.02.2026",
+            details = listOf("Этаж и очередь", "Паркинг", "Цоколь", "Арендатор «Fun City»")
+        ),
+        "Март" to InspectionSchedule(
+            date = "17.03.2026",
+            details = listOf("Этаж и очередь", "Паркинг", "Цоколь", "Арендатор «Fun City»")
+        ),
+        "Апрель" to InspectionSchedule(
+            date = "21.04.2026",
+            details = listOf("Этаж и очередь", "Паркинг", "Цоколь", "Арендатор «Fun City»")
+        ),
+        "Май" to InspectionSchedule(
+            date = "19.05.2026",
+            details = listOf("Этаж и очередь", "Паркинг", "Цоколь", "Арендатор «Fun City»")
+        ),
+        "Июнь" to InspectionSchedule(
+            date = "16.06.2026",
+            details = listOf("Этаж и очередь", "Паркинг", "Цоколь", "Арендатор «Fun City»")
+        ),
+        "Июль" to InspectionSchedule(
+            date = "21.07.2026",
+            details = listOf("Этаж и очередь", "Паркинг", "Цоколь", "Арендатор «Fun City»")
+        ),
+        "Август" to InspectionSchedule(
+            date = "18.08.2026",
+            details = listOf("Этаж и очередь", "Паркинг", "Цоколь", "Арендатор «Fun City»")
+        ),
+        "Сентябрь" to InspectionSchedule(
+            date = "22.09.2026",
+            details = listOf("Этаж и очередь", "Паркинг", "Цоколь", "Арендатор «Fun City»")
+        ),
+        "Октябрь" to InspectionSchedule(
+            date = "20.10.2026",
+            details = listOf("Этаж и очередь", "Паркинг", "Цоколь", "Арендатор «Fun City»")
+        ),
+        "Ноябрь" to InspectionSchedule(
+            date = "17.11.2026",
+            details = listOf("Этаж и очередь", "Паркинг", "Цоколь", "Арендатор «Fun City»")
+        ),
+        "Декабрь" to InspectionSchedule(
+            date = "15.12.2026",
+            details = listOf("Этаж и очередь", "Паркинг", "Цоколь", "Арендатор «Fun City»")
+        )
     ),
     "Маршака" to mapOf(
-        "Январь" to "27.01.2026",
-        "Февраль" to "24.02.2026",
-        "Март" to "24.03.2026",
-        "Апрель" to "28.04.2026",
-        "Май" to "26.05.2026",
-        "Июнь" to "23.06.2026",
-        "Июль" to "28.07.2026",
-        "Август" to "25.08.2026",
-        "Сентябрь" to "29.09.2026",
-        "Октябрь" to "27.10.2026",
-        "Ноябрь" to "24.11.2026",
-        "Декабрь" to "22.12.2026"
+        "Январь" to InspectionSchedule("27.01.2026"),
+        "Февраль" to InspectionSchedule("24.02.2026"),
+        "Март" to InspectionSchedule("24.03.2026"),
+        "Апрель" to InspectionSchedule("28.04.2026"),
+        "Май" to InspectionSchedule("26.05.2026"),
+        "Июнь" to InspectionSchedule("23.06.2026"),
+        "Июль" to InspectionSchedule("28.07.2026"),
+        "Август" to InspectionSchedule("25.08.2026"),
+        "Сентябрь" to InspectionSchedule("29.09.2026"),
+        "Октябрь" to InspectionSchedule("27.10.2026"),
+        "Ноябрь" to InspectionSchedule("24.11.2026"),
+        "Декабрь" to InspectionSchedule("22.12.2026")
     )
 )
 
@@ -181,6 +222,10 @@ fun Dashboard(
 
     var selectedComplex by remember {
         mutableStateOf<Complex?>(null)
+    }
+
+    var selectedInspection by remember {
+        mutableStateOf<InspectionSchedule?>(null)
     }
 
     var searchText by remember {
@@ -341,12 +386,29 @@ fun Dashboard(
                         modifier = Modifier.height(360.dp)
                     ) {
                         items(MONTHS) { month ->
-                            Text(
-                                "$month — ${
-                                    INSPECTION_DATES_BY_COMPLEX[complex.name]?.get(month)
-                                        ?: "дата не задана"
-                                }"
-                            )
+                            val schedule =
+                                INSPECTION_DATES_BY_COMPLEX[complex.name]?.get(month)
+
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable(enabled = schedule != null) {
+                                        selectedInspection = schedule
+                                    }
+                                    .padding(vertical = 8.dp)
+                            ) {
+                                Text("$month — ${schedule?.date ?: "дата не задана"}")
+                                if (schedule != null) {
+                                    Text(
+                                        if (schedule.details.isEmpty()) {
+                                            "Нажмите, чтобы посмотреть детали"
+                                        } else {
+                                            "Нажмите, чтобы посмотреть объекты проверки"
+                                        },
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -357,6 +419,38 @@ fun Dashboard(
                 TextButton(
                     onClick = {
                         selectedComplex = null
+                    }
+                ) {
+                    Text("Закрыть")
+                }
+            }
+        )
+    }
+
+    selectedInspection?.let { inspection ->
+        AlertDialog(
+            onDismissRequest = {
+                selectedInspection = null
+            },
+            title = {
+                Text("Проверка ${inspection.date}")
+            },
+            text = {
+                if (inspection.details.isEmpty()) {
+                    Text("Детали проверки не заданы.")
+                } else {
+                    Column {
+                        Text("Проверяемые объекты:")
+                        inspection.details.forEach { detail ->
+                            Text("• $detail")
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        selectedInspection = null
                     }
                 ) {
                     Text("Закрыть")
