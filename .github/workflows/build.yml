@@ -24,7 +24,11 @@ jobs:
 
       - name: Extract project
         run: unzip -q TCManager_cloud_build.zip -d .
-        
+
+      - name: Fix KSP version
+        run: |
+          sed -i 's/2.1.20-2.0.32/2.1.20-2.0.1/' tc_manager/build.gradle.kts
+
       - name: Apply fixes
         run: |
           cp fixes/MainActivity.kt tc_manager/app/src/main/java/com/example/tcmanager/MainActivity.kt
