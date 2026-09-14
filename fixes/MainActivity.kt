@@ -9,8 +9,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.clickable
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -40,6 +43,67 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
+
+// Редактируйте даты проверок здесь: комплекс -> месяц -> дата.
+private val INSPECTION_DATES_BY_COMPLEX = mapOf(
+    "Меркурий" to mapOf(
+        "Январь" to "15.01.2026",
+        "Февраль" to "12.02.2026",
+        "Март" to "12.03.2026",
+        "Апрель" to "16.04.2026",
+        "Май" to "14.05.2026",
+        "Июнь" to "11.06.2026",
+        "Июль" to "16.07.2026",
+        "Август" to "13.08.2026",
+        "Сентябрь" to "17.09.2026",
+        "Октябрь" to "15.10.2026",
+        "Ноябрь" to "12.11.2026",
+        "Декабрь" to "17.12.2026"
+    ),
+    "Континент" to mapOf(
+        "Январь" to "20.01.2026",
+        "Февраль" to "17.02.2026",
+        "Март" to "17.03.2026",
+        "Апрель" to "21.04.2026",
+        "Май" to "19.05.2026",
+        "Июнь" to "16.06.2026",
+        "Июль" to "21.07.2026",
+        "Август" to "18.08.2026",
+        "Сентябрь" to "22.09.2026",
+        "Октябрь" to "20.10.2026",
+        "Ноябрь" to "17.11.2026",
+        "Декабрь" to "15.12.2026"
+    ),
+    "Маршака" to mapOf(
+        "Январь" to "27.01.2026",
+        "Февраль" to "24.02.2026",
+        "Март" to "24.03.2026",
+        "Апрель" to "28.04.2026",
+        "Май" to "26.05.2026",
+        "Июнь" to "23.06.2026",
+        "Июль" to "28.07.2026",
+        "Август" to "25.08.2026",
+        "Сентябрь" to "29.09.2026",
+        "Октябрь" to "27.10.2026",
+        "Ноябрь" to "24.11.2026",
+        "Декабрь" to "22.12.2026"
+    )
+)
+
+private val MONTHS = listOf(
+    "Январь",
+    "Февраль",
+    "Март",
+    "Апрель",
+    "Май",
+    "Июнь",
+    "Июль",
+    "Август",
+    "Сентябрь",
+    "Октябрь",
+    "Ноябрь",
+    "Декабрь"
+)
 
 class MainViewModel(private val db: AppDatabase) : ViewModel() {
 
@@ -252,7 +316,7 @@ fun Dashboard(
             },
 
             title = {
-                Text("План проверок")
+                Text("Календарь проверок — 2026")
             },
 
             text = {
@@ -269,25 +333,22 @@ fun Dashboard(
                     )
 
                     Text(
-                        "Ежемесячная комплексная проверка"
+                        "КАЛЕНДАРЬ КОМПЛЕКСНЫХ ПРОВЕРОК",
+                        style = MaterialTheme.typography.labelSmall
                     )
 
-                    Spacer(
-                        modifier = Modifier.height(8.dp)
-                    )
-
-                    Text("Январь — плановая дата")
-                    Text("Февраль — плановая дата")
-                    Text("Март — плановая дата")
-                    Text("Апрель — плановая дата")
-                    Text("Май — плановая дата")
-                    Text("Июнь — плановая дата")
-                    Text("Июль — плановая дата")
-                    Text("Август — плановая дата")
-                    Text("Сентябрь — плановая дата")
-                    Text("Октябрь — плановая дата")
-                    Text("Ноябрь — плановая дата")
-                    Text("Декабрь — плановая дата")
+                    LazyColumn(
+                        modifier = Modifier.height(360.dp)
+                    ) {
+                        items(MONTHS) { month ->
+                            Text(
+                                "$month — ${
+                                    INSPECTION_DATES_BY_COMPLEX[complex.name]?.get(month)
+                                        ?: "дата не задана"
+                                }"
+                            )
+                        }
+                    }
                 }
             },
 
@@ -371,47 +432,39 @@ fun HomeScreen(
             )
         }
 
-        items(
-            items = filteredList,
-            key = { it.id }
-        ) { complex ->
-
-            Card(
-                modifier = Modifier.fillMaxWidth()
+        item {
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-
-                Column(
-                    modifier = Modifier.padding(16.dp)
-                ) {
-
-                    Text(
-                        complex.name,
-                        style = MaterialTheme.typography.titleLarge
-                    )
-
-                    Spacer(
-                        modifier = Modifier.height(4.dp)
-                    )
-
-                    Text(
-                        "Ежемесячная комплексная проверка"
-                    )
-
-                    Text(
-                        "План проверок: январь–декабрь 2026",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-
-                    Spacer(
-                        modifier = Modifier.height(8.dp)
-                    )
-
-                    Button(
-                        onClick = {
-                            onOpenPlan(complex)
-                        }
+                items(
+                    items = filteredList,
+                    key = { it.id }
+                ) { complex ->
+                    Card(
+                        modifier = Modifier
+                            .size(156.dp)
+                            .clickable {
+                                onOpenPlan(complex)
+                            }
                     ) {
-                        Text("Открыть план")
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Text(
+                                complex.name,
+                                style = MaterialTheme.typography.titleMedium
+                            )
+
+                            Spacer(
+                                modifier = Modifier.height(8.dp)
+                            )
+
+                            Text(
+                                "КАЛЕНДАРЬ КОМПЛЕКСНЫХ ПРОВЕРОК",
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
                     }
                 }
             }
