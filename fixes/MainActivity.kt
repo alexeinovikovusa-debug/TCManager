@@ -30,9 +30,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -198,18 +197,17 @@ private val INSPECTION_DATE_FORMATTER =
 private val INSPECTION_LABEL_DATE_FORMATTER =
     DateTimeFormatter.ofPattern("dd.MM", Locale("ru"))
 
-private fun nearestInspectionDateLabel(
+private fun nearestInspectionDate(
     complexName: String,
     today: LocalDate = LocalDate.now()
-): String? {
+): LocalDate? {
     val dates = INSPECTION_DATES_BY_COMPLEX[complexName]
         ?.values
         ?.map { LocalDate.parse(it.date, INSPECTION_DATE_FORMATTER) }
         ?.sorted()
         .orEmpty()
 
-    val nearestDate = dates.firstOrNull { !it.isBefore(today) } ?: dates.lastOrNull()
-    return nearestDate?.format(INSPECTION_LABEL_DATE_FORMATTER)
+    return dates.firstOrNull { !it.isBefore(today) } ?: dates.lastOrNull()
 }
 
 private const val NOTIFICATION_PREFS = "inspection_notifications"
@@ -356,6 +354,10 @@ fun Dashboard(
         mutableStateOf<Complex?>(null)
     }
 
+    var selectedMonthIndex by remember {
+        mutableStateOf<Int?>(null)
+    }
+
     var selectedInspection by remember {
         mutableStateOf<InspectionSchedule?>(null)
     }
@@ -453,8 +455,9 @@ fun Dashboard(
                         onSearchChange = {
                             searchText = it
                         },
-                        onOpenPlan = {
-                            selectedComplex = it
+                        onOpenPlan = { complex, monthIndex ->
+                            selectedComplex = complex
+                            selectedMonthIndex = monthIndex
                         }
                     )
                 }
@@ -497,6 +500,7 @@ fun Dashboard(
 
             onDismissRequest = {
                 selectedComplex = null
+                selectedMonthIndex = null
             },
 
             title = {
@@ -505,54 +509,61 @@ fun Dashboard(
 
             text = {
 
-                Column(
+                val calendarListState = rememberLazyListState()
+                LaunchedEffect(complex.id, selectedMonthIndex) {
+                    calendarListState.scrollToItem(selectedMonthIndex?.plus(1) ?: 0)
+                }
+
+                LazyColumn(
+                    state = calendarListState,
                     modifier = Modifier
                         .heightIn(max = 600.dp)
-                        .verticalScroll(rememberScrollState())
                 ) {
 
-                    if (complex.name != "Континент") {
-                        Text(
-                            complex.name,
-                            style = MaterialTheme.typography.titleLarge
-                        )
-
-                        Spacer(
-                            modifier = Modifier.height(12.dp)
-                        )
-                    }
-
-                    Text(
-                        "КАЛЕНДАРЬ КОМПЛЕКСНЫХ ПРОВЕРОК",
-                        style = MaterialTheme.typography.labelSmall
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        WEEKDAYS.forEachIndexed { index, day ->
+                    item {
+                        if (complex.name != "Континент") {
                             Text(
-                                text = day,
-                                modifier = Modifier.weight(1f),
-                                color = if (index >= 5) {
-                                    Color.Red
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                },
-                                style = MaterialTheme.typography.labelSmall,
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                complex.name,
+                                style = MaterialTheme.typography.titleLarge
                             )
+
+                            Spacer(
+                                modifier = Modifier.height(12.dp)
+                            )
+                        }
+
+                        Text(
+                            "КАЛЕНДАРЬ КОМПЛЕКСНЫХ ПРОВЕРОК",
+                            style = MaterialTheme.typography.labelSmall
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            WEEKDAYS.forEachIndexed { index, day ->
+                                Text(
+                                    text = day,
+                                    modifier = Modifier.weight(1f),
+                                    color = if (index >= 5) {
+                                        Color.Red
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                    style = MaterialTheme.typography.labelSmall,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+                            }
                         }
                     }
 
-                    MONTHS.forEachIndexed { monthIndex, month ->
+                    items(MONTHS.size) { monthIndex ->
                         MonthCalendar(
                             monthIndex = monthIndex,
-                            monthName = month,
-                            schedule = INSPECTION_DATES_BY_COMPLEX[complex.name]?.get(month),
+                            monthName = MONTHS[monthIndex],
+                            schedule = INSPECTION_DATES_BY_COMPLEX[complex.name]?.get(MONTHS[monthIndex]),
                             onInspectionClick = { inspection ->
                                 selectedInspection = inspection
                             }
@@ -566,6 +577,7 @@ fun Dashboard(
                 TextButton(
                     onClick = {
                         selectedComplex = null
+                        selectedMonthIndex = null
                     }
                 ) {
                     Text("Закрыть")
@@ -740,7 +752,7 @@ fun HomeScreen(
     list: List<Complex>,
     searchText: String,
     onSearchChange: (String) -> Unit,
-    onOpenPlan: (Complex) -> Unit
+    onOpenPlan: (Complex, Int?) -> Unit
 ) {
     val context = LocalContext.current
     var refreshNotifications by remember { mutableStateOf(0) }
@@ -838,7 +850,7 @@ fun HomeScreen(
                         modifier = Modifier
                             .size(156.dp)
                             .clickable {
-                                onOpenPlan(complex)
+                                onOpenPlan(complex, null)
                             }
                     ) {
                         Column(
@@ -859,16 +871,23 @@ fun HomeScreen(
                                 style = MaterialTheme.typography.labelSmall
                             )
 
-                            nearestInspectionDateLabel(complex.name)?.let { date ->
+                            nearestInspectionDate(complex.name)?.let { inspectionDate ->
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = date,
+                                        text = inspectionDate.format(INSPECTION_LABEL_DATE_FORMATTER),
                                         color = MaterialTheme.colorScheme.primary,
                                         style = MaterialTheme.typography.headlineMedium,
-                                        modifier = Modifier.weight(1f)
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clickable {
+                                                onOpenPlan(
+                                                    complex,
+                                                    inspectionDate.monthValue - 1
+                                                )
+                                            }
                                     )
                                     Text(
                                         text = if (enabled) "🔔" else "🔕",
