@@ -29,7 +29,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -297,7 +296,7 @@ fun Dashboard(
                         },
                         icon = {},
                         label = {
-                            Text("Объекты")
+                            Text("Арендаторы")
                         }
                     )
 
@@ -356,12 +355,7 @@ fun Dashboard(
 
                 1 -> {
 
-                    ObjectsScreen(
-                        list = uniqueList,
-                        onOpenPlan = {
-                            selectedComplex = it
-                        }
-                    )
+                    TenantsScreen(list = uniqueList)
                 }
 
                 2 -> {
@@ -749,9 +743,8 @@ fun HomeScreen(
 }
 
 @Composable
-fun ObjectsScreen(
-    list: List<Complex>,
-    onOpenPlan: (Complex) -> Unit
+fun TenantsScreen(
+    list: List<Complex>
 ) {
 
     LazyColumn(
@@ -766,7 +759,7 @@ fun ObjectsScreen(
         item {
 
             Text(
-                "ОБЪЕКТЫ",
+                "АРЕНДАТОРЫ",
                 style = MaterialTheme.typography.headlineMedium
             )
 
@@ -781,37 +774,18 @@ fun ObjectsScreen(
         ) { complex ->
 
             Card(
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
             ) {
 
                 Column(
-                    modifier = Modifier.padding(16.dp)
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.Center
                 ) {
 
                     Text(
                         complex.name,
-                        style = MaterialTheme.typography.titleLarge
-                    )
-
-                    Spacer(
-                        modifier = Modifier.height(6.dp)
-                    )
-
-                    Text("Этажи")
-                    Text("Очереди")
-                    Text("Секции")
-                    Text("Арендаторы")
-
-                    Spacer(
-                        modifier = Modifier.height(8.dp)
-                    )
-
-                    OutlinedButton(
-                        onClick = {
-                            onOpenPlan(complex)
-                        }
-                    ) {
-                        Text("План проверок")
+                        style = MaterialTheme.typography.titleMedium
                     }
                 }
             }
