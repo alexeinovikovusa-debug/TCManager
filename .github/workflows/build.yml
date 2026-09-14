@@ -31,8 +31,9 @@ jobs:
 
       - name: Fix JVM target
         run: |
-          sed -i 's/android { namespace/android { compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 } namespace/' tc_manager/app/build.gradle.kts
-
+          sed -i 's/android { compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 } namespace =/android { namespace =/' tc_manager/app/build.gradle.kts
+          sed -i '/^android {/a\    compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }' tc_manager/app/build.gradle.kts
+          
       - name: Apply fixes
         run: |
           cp fixes/MainActivity.kt tc_manager/app/src/main/java/com/example/tcmanager/MainActivity.kt
