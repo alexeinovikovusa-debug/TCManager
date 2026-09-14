@@ -1,6 +1,16 @@
 package com.example.tcmanager
 
+import android.Manifest
+import android.app.AlarmManager
+import android.app.PendingIntent
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.Build
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
@@ -33,6 +43,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -48,6 +59,7 @@ import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import java.util.Calendar
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -200,6 +212,71 @@ private fun nearestInspectionDateLabel(
     return nearestDate?.format(INSPECTION_LABEL_DATE_FORMATTER)
 }
 
+private const val NOTIFICATION_PREFS = "inspection_notifications"
+private const val NOTIFICATION_TIME_KEY = "notification_time"
+private const val DEFAULT_NOTIFICATION_TIME = "09:00"
+
+private fun notificationPreferences(context: Context) =
+    context.getSharedPreferences(NOTIFICATION_PREFS, Context.MODE_PRIVATE)
+
+private fun notificationEnabled(context: Context, complexName: String): Boolean =
+    notificationPreferences(context).getBoolean("enabled_$complexName", false)
+
+private fun notificationDate(complexName: String, today: LocalDate = LocalDate.now()): LocalDate? =
+    INSPECTION_DATES_BY_COMPLEX[complexName]
+        ?.values
+        ?.map { LocalDate.parse(it.date, INSPECTION_DATE_FORMATTER) }
+        ?.sorted()
+        ?.firstOrNull { !it.isBefore(today) }
+
+private fun scheduleInspectionNotification(
+    context: Context,
+    complexName: String,
+    enabled: Boolean
+) {
+    val alarmManager = context.getSystemService(AlarmManager::class.java)
+    val intent = Intent(context, InspectionNotificationReceiver::class.java).apply {
+        putExtra(InspectionNotificationReceiver.EXTRA_COMPLEX_NAME, complexName)
+        putExtra(
+            InspectionNotificationReceiver.EXTRA_DATE,
+            notificationDate(complexName)?.format(INSPECTION_DATE_FORMATTER)
+        )
+    }
+    val requestCode = complexName.hashCode()
+    val pendingIntent = PendingIntent.getBroadcast(
+        context,
+        requestCode,
+        intent,
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+    )
+    alarmManager.cancel(pendingIntent)
+    if (!enabled) return
+
+    val date = notificationDate(complexName) ?: return
+    val timeParts = notificationPreferences(context)
+        .getString(NOTIFICATION_TIME_KEY, DEFAULT_NOTIFICATION_TIME)
+        .orEmpty()
+        .split(":")
+    val hour = timeParts.getOrNull(0)?.toIntOrNull() ?: 9
+    val minute = timeParts.getOrNull(1)?.toIntOrNull() ?: 0
+    val calendar = Calendar.getInstance().apply {
+        set(date.year, date.monthValue - 1, date.dayOfMonth - 1, hour, minute, 0)
+        set(Calendar.MILLISECOND, 0)
+    }
+    if (calendar.timeInMillis <= System.currentTimeMillis()) return
+    alarmManager.setAndAllowWhileIdle(
+        AlarmManager.RTC_WAKEUP,
+        calendar.timeInMillis,
+        pendingIntent
+    )
+}
+
+private fun rescheduleEnabledNotifications(context: Context, complexes: List<Complex>) {
+    complexes.forEach { complex ->
+        scheduleInspectionNotification(context, complex.name, notificationEnabled(context, complex.name))
+    }
+}
+
 class MainViewModel(private val db: AppDatabase) : ViewModel() {
 
     val complexes: Flow<List<Complex>> = db.complexDao().all()
@@ -264,6 +341,7 @@ fun Dashboard(
     val list by complexes.collectAsState(
         initial = emptyList()
     )
+    val context = LocalContext.current
 
     // Убираем дубликаты комплексов по названию
     val uniqueList = list.distinctBy {
@@ -284,6 +362,18 @@ fun Dashboard(
 
     var searchText by remember {
         mutableStateOf("")
+    }
+    var notificationTime by remember {
+        mutableStateOf(
+            notificationPreferences(context)
+                .getString(NOTIFICATION_TIME_KEY, DEFAULT_NOTIFICATION_TIME)
+                ?: DEFAULT_NOTIFICATION_TIME
+        )
+    }
+    var showTimeSettings by remember { mutableStateOf(false) }
+
+    LaunchedEffect(list) {
+        rescheduleEnabledNotifications(context, list)
     }
 
     MaterialTheme {
@@ -392,9 +482,9 @@ fun Dashboard(
 
                 4 -> {
 
-                    SimpleScreen(
-                        title = "ЕЩЁ",
-                        text = "Документы, проекты, настройки и резервное копирование."
+                    SettingsScreen(
+                        notificationTime = notificationTime,
+                        onOpenTimeSettings = { showTimeSettings = true }
                     )
                 }
             }
@@ -513,6 +603,21 @@ fun Dashboard(
                 ) {
                     Text("Закрыть")
                 }
+            }
+        )
+    }
+
+    if (showTimeSettings) {
+        TimeSettingsDialog(
+            initialTime = notificationTime,
+            onDismiss = { showTimeSettings = false },
+            onSave = { time ->
+                notificationTime = time
+                notificationPreferences(context).edit()
+                    .putString(NOTIFICATION_TIME_KEY, time)
+                    .apply()
+                rescheduleEnabledNotifications(context, uniqueList)
+                showTimeSettings = false
             }
         )
     }
@@ -637,6 +742,28 @@ fun HomeScreen(
     onSearchChange: (String) -> Unit,
     onOpenPlan: (Complex) -> Unit
 ) {
+    val context = LocalContext.current
+    var refreshNotifications by remember { mutableStateOf(0) }
+    var pendingEnable by remember { mutableStateOf<String?>(null) }
+    val requestNotificationsPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        val complexName = pendingEnable
+        pendingEnable = null
+        if (granted && complexName != null) {
+            notificationPreferences(context).edit()
+                .putBoolean("enabled_$complexName", true)
+                .apply()
+            scheduleInspectionNotification(context, complexName, true)
+            refreshNotifications++
+        } else if (!granted) {
+            Toast.makeText(
+                context,
+                "Разрешение на уведомления не выдано",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
 
     val filteredList = list.filter {
 
@@ -704,6 +831,9 @@ fun HomeScreen(
                     items = filteredList,
                     key = { it.id }
                 ) { complex ->
+                    val enabled = remember(refreshNotifications, complex.name) {
+                        notificationEnabled(context, complex.name)
+                    }
                     Card(
                         modifier = Modifier
                             .size(156.dp)
@@ -730,15 +860,55 @@ fun HomeScreen(
                             )
 
                             nearestInspectionDateLabel(complex.name)?.let { date ->
-                                Text(
-                                    text = date,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    style = MaterialTheme.typography.headlineMedium
-                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = date,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        style = MaterialTheme.typography.headlineMedium,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(
+                                        text = if (enabled) "🔔" else "🔕",
+                                        color = if (enabled) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
+                                        modifier = Modifier
+                                            .clickable {
+                                                val newValue = !enabled
+                                                if (
+                                                    newValue &&
+                                                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                                                    context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                                                ) {
+                                                    pendingEnable = complex.name
+                                                    requestNotificationsPermission.launch(
+                                                        Manifest.permission.POST_NOTIFICATIONS
+                                                    )
+                                                } else {
+                                                    notificationPreferences(context).edit()
+                                                        .putBoolean("enabled_${complex.name}", newValue)
+                                                        .apply()
+                                                    scheduleInspectionNotification(
+                                                        context,
+                                                        complex.name,
+                                                        newValue
+                                                    )
+                                                    refreshNotifications++
+                                                }
+                                            }
+                                            .padding(4.dp)
+                                    )
+                                }
                             }
                         }
                     }
                 }
+
             }
         }
 
@@ -764,6 +934,57 @@ fun HomeScreen(
             }
         }
     }
+}
+
+@Composable
+private fun SettingsScreen(
+    notificationTime: String,
+    onOpenTimeSettings: () -> Unit
+) {
+    Column(modifier = Modifier.padding(16.dp)) {
+        Text("ЕЩЁ", style = MaterialTheme.typography.headlineMedium)
+        Spacer(modifier = Modifier.height(12.dp))
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Уведомления о проверках", style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Время отправки: $notificationTime")
+                TextButton(onClick = onOpenTimeSettings) {
+                    Text("Изменить время")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TimeSettingsDialog(
+    initialTime: String,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit
+) {
+    var time by remember { mutableStateOf(initialTime) }
+    val valid = Regex("^([01][0-9]|2[0-3]):[0-5][0-9]$").matches(time)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Время уведомлений") },
+        text = {
+            OutlinedTextField(
+                value = time,
+                onValueChange = { time = it.take(5) },
+                label = { Text("ЧЧ:ММ") },
+                singleLine = true,
+                supportingText = { Text("Например, 09:00") },
+                isError = time.isNotEmpty() && !valid
+            )
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
+        confirmButton = {
+            TextButton(enabled = valid, onClick = { onSave(time) }) {
+                Text("Сохранить")
+            }
+        }
+    )
 }
 
 @Composable
