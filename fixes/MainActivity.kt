@@ -184,6 +184,22 @@ private val HOLIDAYS_2026 = setOf(
 
 private val INSPECTION_DATE_FORMATTER =
     DateTimeFormatter.ofPattern("dd.MM.yyyy", Locale("ru"))
+private val INSPECTION_LABEL_DATE_FORMATTER =
+    DateTimeFormatter.ofPattern("dd.MM", Locale("ru"))
+
+private fun nearestInspectionDateLabel(
+    complexName: String,
+    today: LocalDate = LocalDate.now()
+): String? {
+    val dates = INSPECTION_DATES_BY_COMPLEX[complexName]
+        ?.values
+        ?.map { LocalDate.parse(it.date, INSPECTION_DATE_FORMATTER) }
+        ?.sorted()
+        .orEmpty()
+
+    val nearestDate = dates.firstOrNull { !it.isBefore(today) } ?: dates.lastOrNull()
+    return nearestDate?.format(INSPECTION_LABEL_DATE_FORMATTER)
+}
 
 class MainViewModel(private val db: AppDatabase) : ViewModel() {
 
@@ -718,6 +734,14 @@ fun HomeScreen(
                                 "КАЛЕНДАРЬ КОМПЛЕКСНЫХ ПРОВЕРОК",
                                 style = MaterialTheme.typography.labelSmall
                             )
+
+                            nearestInspectionDateLabel(complex.name)?.let { date ->
+                                Text(
+                                    text = date,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    style = MaterialTheme.typography.headlineMedium
+                                )
+                            }
                         }
                     }
                 }
