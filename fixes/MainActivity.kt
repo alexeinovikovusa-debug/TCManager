@@ -68,51 +68,51 @@ private val INSPECTION_DATES_BY_COMPLEX = mapOf(
     "Континент" to mapOf(
         "Январь" to InspectionSchedule(
             date = "20.01.2026",
-            details = listOf("Этаж и очередь", "Паркинг", "Цоколь", "Арендатор «Fun City»")
+            details = listOf("Цоколь 1 и 2 очередь", "Паркинг")
         ),
         "Февраль" to InspectionSchedule(
             date = "17.02.2026",
-            details = listOf("Этаж и очередь", "Паркинг", "Цоколь", "Арендатор «Fun City»")
+            details = listOf("1 этаж 1 и 2 очередь", "2 этаж 2 очередь")
         ),
         "Март" to InspectionSchedule(
             date = "17.03.2026",
-            details = listOf("Этаж и очередь", "Паркинг", "Цоколь", "Арендатор «Fun City»")
+            details = listOf("3 этаж 1 и 2 очередь", "2 этаж 2 очередь", "Fun City")
         ),
         "Апрель" to InspectionSchedule(
             date = "21.04.2026",
-            details = listOf("Этаж и очередь", "Паркинг", "Цоколь", "Арендатор «Fun City»")
+            details = listOf("4 этаж 1 и 2 очередь")
         ),
         "Май" to InspectionSchedule(
             date = "19.05.2026",
-            details = listOf("Этаж и очередь", "Паркинг", "Цоколь", "Арендатор «Fun City»")
+            details = listOf("Цоколь 1 и 2 очередь", "Паркинг")
         ),
         "Июнь" to InspectionSchedule(
             date = "16.06.2026",
-            details = listOf("Этаж и очередь", "Паркинг", "Цоколь", "Арендатор «Fun City»")
+            details = listOf("1 этаж 1 и 2 очередь", "2 этаж 2 очередь")
         ),
         "Июль" to InspectionSchedule(
             date = "21.07.2026",
-            details = listOf("Этаж и очередь", "Паркинг", "Цоколь", "Арендатор «Fun City»")
+            details = listOf("3 этаж 1 и 2 очередь", "2 этаж 2 очередь", "Fun City")
         ),
         "Август" to InspectionSchedule(
             date = "18.08.2026",
-            details = listOf("Этаж и очередь", "Паркинг", "Цоколь", "Арендатор «Fun City»")
+            details = listOf("4 этаж 1 и 2 очередь")
         ),
         "Сентябрь" to InspectionSchedule(
             date = "22.09.2026",
-            details = listOf("Этаж и очередь", "Паркинг", "Цоколь", "Арендатор «Fun City»")
+            details = listOf("Цоколь 1 и 2 очередь", "Паркинг")
         ),
         "Октябрь" to InspectionSchedule(
             date = "20.10.2026",
-            details = listOf("Этаж и очередь", "Паркинг", "Цоколь", "Арендатор «Fun City»")
+            details = listOf("1 этаж 1 и 2 очередь", "2 этаж 2 очередь")
         ),
         "Ноябрь" to InspectionSchedule(
             date = "17.11.2026",
-            details = listOf("Этаж и очередь", "Паркинг", "Цоколь", "Арендатор «Fun City»")
+            details = listOf("3 этаж 1 и 2 очередь", "2 этаж 2 очередь", "Fun City")
         ),
         "Декабрь" to InspectionSchedule(
             date = "15.12.2026",
-            details = listOf("Этаж и очередь", "Паркинг", "Цоколь", "Арендатор «Fun City»")
+            details = listOf("4 этаж 1 и 2 очередь")
         )
     ),
     "Маршака" to mapOf(
@@ -368,14 +368,16 @@ fun Dashboard(
 
                 Column {
 
-                    Text(
-                        complex.name,
-                        style = MaterialTheme.typography.titleLarge
-                    )
+                    if (complex.name != "Континент") {
+                        Text(
+                            complex.name,
+                            style = MaterialTheme.typography.titleLarge
+                        )
 
-                    Spacer(
-                        modifier = Modifier.height(12.dp)
-                    )
+                        Spacer(
+                            modifier = Modifier.height(12.dp)
+                        )
+                    }
 
                     Text(
                         "КАЛЕНДАРЬ КОМПЛЕКСНЫХ ПРОВЕРОК",
@@ -432,17 +434,18 @@ fun Dashboard(
             onDismissRequest = {
                 selectedInspection = null
             },
-            title = {
-                Text("Проверка ${inspection.date}")
+            title = if (inspection.details.isEmpty()) {
+                { Text("Проверка ${inspection.date}") }
+            } else {
+                null
             },
             text = {
                 if (inspection.details.isEmpty()) {
                     Text("Детали проверки не заданы.")
                 } else {
                     Column {
-                        Text("Проверяемые объекты:")
                         inspection.details.forEach { detail ->
-                            Text("• $detail")
+                            Text(detail)
                         }
                     }
                 }
