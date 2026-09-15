@@ -368,15 +368,6 @@ fun Dashboard(
         mutableStateOf<InspectionSchedule?>(null)
     }
 
-    var searchText by remember {
-        mutableStateOf("")
-    }
-    var tenantSearchText by remember {
-        mutableStateOf("")
-    }
-    var openTenantList by remember {
-        mutableStateOf(false)
-    }
     var notificationTime by remember {
         mutableStateOf(
             notificationPreferences(context)
@@ -402,7 +393,6 @@ fun Dashboard(
                         selected = selectedScreen == 0,
                         onClick = {
                             selectedScreen = 0
-                            openTenantList = false
                         },
                         icon = {},
                         label = {
@@ -414,7 +404,6 @@ fun Dashboard(
                         selected = selectedScreen == 1,
                         onClick = {
                             selectedScreen = 1
-                            openTenantList = false
                         },
                         icon = {},
                         label = {
@@ -465,15 +454,6 @@ fun Dashboard(
 
                     HomeScreen(
                         list = uniqueList,
-                        searchText = searchText,
-                        onSearchChange = {
-                            searchText = it
-                        },
-                        onOpenTenantSearch = {
-                            tenantSearchText = searchText
-                            openTenantList = true
-                            selectedScreen = 1
-                        },
                         onOpenPlan = { complex, monthIndex ->
                             selectedComplex = complex
                             selectedMonthIndex = monthIndex
@@ -484,9 +464,7 @@ fun Dashboard(
                 1 -> {
 
                     TenantsScreen(
-                        list = uniqueList,
-                        initialSearchText = tenantSearchText,
-                        openComplex = if (openTenantList) "Континент" else null
+                        list = uniqueList
                     )
                 }
 
@@ -773,9 +751,6 @@ private fun RowScope.CalendarDay(
 @Composable
 fun HomeScreen(
     list: List<Complex>,
-    searchText: String,
-    onSearchChange: (String) -> Unit,
-    onOpenTenantSearch: () -> Unit,
     onOpenPlan: (Complex, Int?) -> Unit
 ) {
     val context = LocalContext.current
@@ -799,16 +774,6 @@ fun HomeScreen(
                 Toast.LENGTH_LONG
             ).show()
         }
-    }
-
-    val filteredList = list.filter { complex ->
-        complex.name.contains(searchText, ignoreCase = true) ||
-                (
-                    complex.name == "Континент" &&
-                        TenantSeed.all.any { tenant ->
-                            tenantMatchesSearch(tenant, searchText)
-                        }
-                    )
     }
 
     LazyColumn(
@@ -836,24 +801,6 @@ fun HomeScreen(
 
         item {
 
-            OutlinedTextField(
-
-                value = searchText,
-
-                onValueChange = onSearchChange,
-
-                modifier = Modifier.fillMaxWidth(),
-
-                label = {
-                    Text("Поиск арендатора или секции")
-                },
-
-                singleLine = true
-            )
-        }
-
-        item {
-
             Text(
                 "КОМПЛЕКСНЫЕ ПРОВЕРКИ",
                 style = MaterialTheme.typography.titleLarge
@@ -865,14 +812,9 @@ fun HomeScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(
-                    items = filteredList,
+                    items = list,
                     key = { it.id }
                 ) { complex ->
-                    val tenantMatch = complex.name == "Континент" &&
-                            searchText.isNotBlank() &&
-                            TenantSeed.all.any { tenant ->
-                                tenantMatchesSearch(tenant, searchText)
-                            }
                     val enabled = remember(refreshNotifications, complex.name) {
                         notificationEnabled(context, complex.name)
                     }
@@ -891,14 +833,6 @@ fun HomeScreen(
                                 complex.name,
                                 style = MaterialTheme.typography.titleMedium
                             )
-
-                            if (tenantMatch) {
-                                Text(
-                                    "Совпадение найдено — открыть арендаторов",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    modifier = Modifier.clickable(onClick = onOpenTenantSearch)
-                                )
-                            }
 
                             Spacer(
                                 modifier = Modifier.height(8.dp)
@@ -966,12 +900,6 @@ fun HomeScreen(
                     }
                 }
 
-            }
-        }
-
-        if (filteredList.isEmpty() && searchText.isNotBlank()) {
-            item {
-                Text("Ничего не найдено")
             }
         }
 
