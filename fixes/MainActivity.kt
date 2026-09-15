@@ -3,6 +3,7 @@ package com.example.tcmanager
 import android.Manifest
 import android.app.AlarmManager
 import android.app.PendingIntent
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -56,6 +57,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import android.net.Uri
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
@@ -1146,6 +1148,19 @@ private fun TenantListDialog(onDismiss: () -> Unit) {
     )
 
     selectedTenant?.let { tenant ->
+        val context = LocalContext.current
+        val email = firstTenantContact(tenant.email)
+        val phone = firstTenantContact(tenant.phone)
+        val address = tenant.address.trim().trim('"', '\'')
+        val emailIntent = email.takeIf { it.isNotBlank() }?.let {
+            Intent(Intent.ACTION_SENDTO, Uri.fromParts("mailto", it, null))
+        }
+        val phoneIntent = phone.takeIf { it.isNotBlank() }?.let {
+            Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", it, null))
+        }
+        val addressIntent = address.takeIf { it.isNotBlank() }?.let {
+            Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=${Uri.encode(it)}"))
+        }
         AlertDialog(
             onDismissRequest = { selectedTenant = null },
             title = { Text(tenant.tenant) },
@@ -1160,9 +1175,27 @@ private fun TenantListDialog(onDismiss: () -> Unit) {
                     TenantDetailField("Дата окончания", tenant.leaseEnd)
                     TenantDetailField("Бренд", tenant.brand)
                     TenantDetailField("Вид деятельности", tenant.activity)
-                    TenantDetailField("Телефон", tenant.phone)
-                    TenantDetailField("E-mail", tenant.email)
-                    TenantDetailField("Адрес", tenant.address)
+                    TenantDetailField(
+                        "Телефон",
+                        tenant.phone,
+                        onClick = phoneIntent?.takeIf { hasIntentHandler(context, it) }?.let {
+                            { launchTenantIntent(context, it, "Не удалось открыть приложение для звонков") }
+                        }
+                    )
+                    TenantDetailField(
+                        "E-mail",
+                        tenant.email,
+                        onClick = emailIntent?.takeIf { hasIntentHandler(context, it) }?.let {
+                            { launchTenantIntent(context, it, "Не удалось открыть почтовое приложение") }
+                        }
+                    )
+                    TenantDetailField(
+                        "Адрес",
+                        tenant.address,
+                        onClick = addressIntent?.takeIf { hasIntentHandler(context, it) }?.let {
+                            { launchTenantIntent(context, it, "Не удалось открыть приложение карт") }
+                        }
+                    )
                 }
             },
             confirmButton = {
@@ -1173,11 +1206,36 @@ private fun TenantListDialog(onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun TenantDetailField(label: String, value: String) {
+private fun TenantDetailField(
+    label: String,
+    value: String,
+    onClick: (() -> Unit)? = null
+) {
     Text(
         "$label: ${value.ifBlank { "—" }}",
-        modifier = Modifier.padding(vertical = 3.dp)
+        modifier = Modifier
+            .padding(vertical = 3.dp)
+            .clickable(enabled = onClick != null) { onClick?.invoke() },
+        color = if (onClick != null) MaterialTheme.colorScheme.primary else Color.Unspecified
     )
+}
+
+private fun firstTenantContact(value: String): String =
+    value.split(';', ',', '\n')
+        .asSequence()
+        .map { it.trim().trim('"', '\'') }
+        .firstOrNull { it.isNotBlank() }
+        .orEmpty()
+
+private fun hasIntentHandler(context: Context, intent: Intent): Boolean =
+    context.packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY) != null
+
+private fun launchTenantIntent(context: Context, intent: Intent, errorMessage: String) {
+    try {
+        context.startActivity(intent)
+    } catch (_: ActivityNotFoundException) {
+        Toast.makeText(context, errorMessage, Toast.LENGTH_SHORT).show()
+    }
 }
 
 @Composable
