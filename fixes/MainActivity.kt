@@ -783,13 +783,14 @@ fun HomeScreen(
         }
     }
 
-    val filteredList = list.filter {
-
-        searchText.isBlank() ||
-                it.name.contains(
-                    searchText,
-                    ignoreCase = true
-                )
+    val filteredList = list.filter { complex ->
+        complex.name.contains(searchText, ignoreCase = true) ||
+                (
+                    complex.name == "Континент" &&
+                        TenantSeed.all.any { tenant ->
+                            tenantMatchesSearch(tenant, searchText)
+                        }
+                    )
     }
 
     LazyColumn(
@@ -849,6 +850,11 @@ fun HomeScreen(
                     items = filteredList,
                     key = { it.id }
                 ) { complex ->
+                    val tenantMatch = complex.name == "Континент" &&
+                            searchText.isNotBlank() &&
+                            TenantSeed.all.any { tenant ->
+                                tenantMatchesSearch(tenant, searchText)
+                            }
                     val enabled = remember(refreshNotifications, complex.name) {
                         notificationEnabled(context, complex.name)
                     }
@@ -867,6 +873,13 @@ fun HomeScreen(
                                 complex.name,
                                 style = MaterialTheme.typography.titleMedium
                             )
+
+                            if (tenantMatch) {
+                                Text(
+                                    "Совпадение найдено в данных арендаторов",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
 
                             Spacer(
                                 modifier = Modifier.height(8.dp)
@@ -958,6 +971,28 @@ fun HomeScreen(
                 }
             }
         }
+    }
+}
+
+private fun normalizedSearchValue(value: String): String =
+    value.filter { it.isLetterOrDigit() }.lowercase(Locale.ROOT)
+
+private fun tenantMatchesSearch(tenant: TenantRecord, searchText: String): Boolean {
+    val query = searchText.trim()
+    if (query.isBlank()) {
+        return false
+    }
+
+    val normalizedQuery = normalizedSearchValue(query)
+    return listOf(tenant.section, tenant.tenant, tenant.brand).any { value ->
+        value.isNotBlank() &&
+                (
+                    value.contains(query, ignoreCase = true) ||
+                        (
+                            normalizedQuery.isNotBlank() &&
+                                normalizedSearchValue(value).contains(normalizedQuery)
+                            )
+                    )
     }
 }
 
