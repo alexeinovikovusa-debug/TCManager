@@ -371,6 +371,12 @@ fun Dashboard(
     var searchText by remember {
         mutableStateOf("")
     }
+    var tenantSearchText by remember {
+        mutableStateOf("")
+    }
+    var openTenantList by remember {
+        mutableStateOf(false)
+    }
     var notificationTime by remember {
         mutableStateOf(
             notificationPreferences(context)
@@ -396,6 +402,7 @@ fun Dashboard(
                         selected = selectedScreen == 0,
                         onClick = {
                             selectedScreen = 0
+                            openTenantList = false
                         },
                         icon = {},
                         label = {
@@ -407,6 +414,7 @@ fun Dashboard(
                         selected = selectedScreen == 1,
                         onClick = {
                             selectedScreen = 1
+                            openTenantList = false
                         },
                         icon = {},
                         label = {
@@ -461,6 +469,11 @@ fun Dashboard(
                         onSearchChange = {
                             searchText = it
                         },
+                        onOpenTenantSearch = {
+                            tenantSearchText = searchText
+                            openTenantList = true
+                            selectedScreen = 1
+                        },
                         onOpenPlan = { complex, monthIndex ->
                             selectedComplex = complex
                             selectedMonthIndex = monthIndex
@@ -470,7 +483,11 @@ fun Dashboard(
 
                 1 -> {
 
-                    TenantsScreen(list = uniqueList)
+                    TenantsScreen(
+                        list = uniqueList,
+                        initialSearchText = tenantSearchText,
+                        openComplex = if (openTenantList) "Континент" else null
+                    )
                 }
 
                 2 -> {
@@ -758,6 +775,7 @@ fun HomeScreen(
     list: List<Complex>,
     searchText: String,
     onSearchChange: (String) -> Unit,
+    onOpenTenantSearch: () -> Unit,
     onOpenPlan: (Complex, Int?) -> Unit
 ) {
     val context = LocalContext.current
@@ -876,8 +894,9 @@ fun HomeScreen(
 
                             if (tenantMatch) {
                                 Text(
-                                    "Совпадение найдено в данных арендаторов",
-                                    style = MaterialTheme.typography.bodySmall
+                                    "Совпадение найдено — открыть арендаторов",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.clickable(onClick = onOpenTenantSearch)
                                 )
                             }
 
@@ -950,6 +969,12 @@ fun HomeScreen(
             }
         }
 
+        if (filteredList.isEmpty() && searchText.isNotBlank()) {
+            item {
+                Text("Ничего не найдено")
+            }
+        }
+
         item {
 
             Text(
@@ -984,7 +1009,15 @@ private fun tenantMatchesSearch(tenant: TenantRecord, searchText: String): Boole
     }
 
     val normalizedQuery = normalizedSearchValue(query)
-    return listOf(tenant.section, tenant.tenant, tenant.brand).any { value ->
+    return listOf(
+        tenant.section,
+        tenant.floorOrType,
+        tenant.tenant,
+        tenant.brand,
+        tenant.activity,
+        tenant.phone,
+        tenant.email
+    ).any { value ->
         value.isNotBlank() &&
                 (
                     value.contains(query, ignoreCase = true) ||
@@ -1049,9 +1082,13 @@ private fun TimeSettingsDialog(
 
 @Composable
 fun TenantsScreen(
-    list: List<Complex>
+    list: List<Complex>,
+    initialSearchText: String = "",
+    openComplex: String? = null
 ) {
-    var selectedComplex by remember { mutableStateOf<String?>(null) }
+    var selectedComplex by remember(openComplex) {
+        mutableStateOf(openComplex)
+    }
 
     LazyColumn(
 
@@ -1113,26 +1150,25 @@ fun TenantsScreen(
     }
 
     if (selectedComplex == "Континент") {
-        TenantListDialog(onDismiss = { selectedComplex = null })
+        TenantListDialog(
+            initialSearchText = initialSearchText,
+            onDismiss = { selectedComplex = null }
+        )
     }
 }
 
 @Composable
-private fun TenantListDialog(onDismiss: () -> Unit) {
-    var searchText by remember { mutableStateOf("") }
+private fun TenantListDialog(
+    initialSearchText: String = "",
+    onDismiss: () -> Unit
+) {
+    var searchText by remember(initialSearchText) {
+        mutableStateOf(initialSearchText)
+    }
     var selectedTenant by remember { mutableStateOf<TenantRecord?>(null) }
     val tenants = remember(searchText) {
         TenantSeed.all.filter { tenant ->
-            searchText.isBlank() ||
-                listOf(
-                    tenant.section,
-                    tenant.floorOrType,
-                    tenant.tenant,
-                    tenant.brand,
-                    tenant.activity,
-                    tenant.phone,
-                    tenant.email
-                ).any { it.contains(searchText, ignoreCase = true) }
+            searchText.isBlank() || tenantMatchesSearch(tenant, searchText)
         }
     }
 
@@ -1153,25 +1189,31 @@ private fun TenantListDialog(onDismiss: () -> Unit) {
                     modifier = Modifier.heightIn(max = 480.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    items(tenants, key = { it.section + it.tenant }) { tenant ->
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { selectedTenant = tenant }
-                        ) {
-                            Column(modifier = Modifier.padding(10.dp)) {
-                                Text(tenant.section, style = MaterialTheme.typography.labelMedium)
-                                Text(tenant.tenant, style = MaterialTheme.typography.titleSmall)
-                                if (tenant.brand.isNotBlank()) {
-                                    Text(tenant.brand, style = MaterialTheme.typography.bodyMedium)
-                                }
-                                if (tenant.activity.isNotBlank() || tenant.floorOrType.isNotBlank()) {
-                                    Text(
-                                        listOf(tenant.activity, tenant.floorOrType)
-                                            .filter { it.isNotBlank() }
-                                            .joinToString(" • "),
-                                        style = MaterialTheme.typography.bodySmall
-                                    )
+                    if (tenants.isEmpty()) {
+                        item {
+                            Text("Ничего не найдено")
+                        }
+                    } else {
+                        items(tenants, key = { it.section + it.tenant }) { tenant ->
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { selectedTenant = tenant }
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Text(tenant.section, style = MaterialTheme.typography.labelMedium)
+                                    Text(tenant.tenant, style = MaterialTheme.typography.titleSmall)
+                                    if (tenant.brand.isNotBlank()) {
+                                        Text(tenant.brand, style = MaterialTheme.typography.bodyMedium)
+                                    }
+                                    if (tenant.activity.isNotBlank() || tenant.floorOrType.isNotBlank()) {
+                                        Text(
+                                            listOf(tenant.activity, tenant.floorOrType)
+                                                .filter { it.isNotBlank() }
+                                                .joinToString(" • "),
+                                            style = MaterialTheme.typography.bodySmall
+                                        )
+                                    }
                                 }
                             }
                         }
