@@ -65,6 +65,8 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.tcmanager.data.AppDatabase
 import com.example.tcmanager.data.Complex
+import com.example.tcmanager.data.TenantRecord
+import com.example.tcmanager.data.TenantSeed
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -991,6 +993,7 @@ private fun TimeSettingsDialog(
 fun TenantsScreen(
     list: List<Complex>
 ) {
+    var selectedComplex by remember { mutableStateOf<String?>(null) }
 
     LazyColumn(
 
@@ -1021,6 +1024,9 @@ fun TenantsScreen(
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .clickable(enabled = complex.name == "Континент") {
+                        selectedComplex = complex.name
+                    }
             ) {
 
                 Column(
@@ -1032,10 +1038,125 @@ fun TenantsScreen(
                         complex.name,
                         style = MaterialTheme.typography.titleMedium
                     )
+                    if (complex.name == "Континент") {
+                        Text(
+                            "${TenantSeed.all.size} арендаторов • Нажмите, чтобы открыть список",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    } else {
+                        Text(
+                            "Данные арендаторов пока не загружены",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
                 }
             }
         }
     }
+
+    if (selectedComplex == "Континент") {
+        TenantListDialog(onDismiss = { selectedComplex = null })
+    }
+}
+
+@Composable
+private fun TenantListDialog(onDismiss: () -> Unit) {
+    var searchText by remember { mutableStateOf("") }
+    var selectedTenant by remember { mutableStateOf<TenantRecord?>(null) }
+    val tenants = remember(searchText) {
+        TenantSeed.all.filter { tenant ->
+            searchText.isBlank() ||
+                listOf(
+                    tenant.section,
+                    tenant.floorOrType,
+                    tenant.tenant,
+                    tenant.brand,
+                    tenant.activity,
+                    tenant.phone,
+                    tenant.email
+                ).any { it.contains(searchText, ignoreCase = true) }
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Арендаторы — Континент") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = searchText,
+                    onValueChange = { searchText = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Поиск по арендатору, бренду или секции") },
+                    singleLine = true
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                LazyColumn(
+                    modifier = Modifier.heightIn(max = 480.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items(tenants, key = { it.section + it.tenant }) { tenant ->
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selectedTenant = tenant }
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Text(tenant.section, style = MaterialTheme.typography.labelMedium)
+                                Text(tenant.tenant, style = MaterialTheme.typography.titleSmall)
+                                if (tenant.brand.isNotBlank()) {
+                                    Text(tenant.brand, style = MaterialTheme.typography.bodyMedium)
+                                }
+                                if (tenant.activity.isNotBlank() || tenant.floorOrType.isNotBlank()) {
+                                    Text(
+                                        listOf(tenant.activity, tenant.floorOrType)
+                                            .filter { it.isNotBlank() }
+                                            .joinToString(" • "),
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Закрыть") } }
+    )
+
+    selectedTenant?.let { tenant ->
+        AlertDialog(
+            onDismissRequest = { selectedTenant = null },
+            title = { Text(tenant.tenant) },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .heightIn(max = 520.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    TenantDetailField("Секция", tenant.section)
+                    TenantDetailField("Этаж/тип помещения", tenant.floorOrType)
+                    TenantDetailField("Дата окончания", tenant.leaseEnd)
+                    TenantDetailField("Бренд", tenant.brand)
+                    TenantDetailField("Вид деятельности", tenant.activity)
+                    TenantDetailField("Телефон", tenant.phone)
+                    TenantDetailField("E-mail", tenant.email)
+                    TenantDetailField("Адрес", tenant.address)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { selectedTenant = null }) { Text("Закрыть") }
+            }
+        )
+    }
+}
+
+@Composable
+private fun TenantDetailField(label: String, value: String) {
+    Text(
+        "$label: ${value.ifBlank { "—" }}",
+        modifier = Modifier.padding(vertical = 3.dp)
+    )
 }
 
 @Composable

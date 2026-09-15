@@ -38,6 +38,7 @@ jobs:
         run: |
           cp fixes/MainActivity.kt tc_manager/app/src/main/java/com/example/tcmanager/MainActivity.kt
           cp fixes/AppDatabase.kt tc_manager/app/src/main/java/com/example/tcmanager/data/AppDatabase.kt
+          cp fixes/TenantData.kt tc_manager/app/src/main/java/com/example/tcmanager/data/TenantData.kt
           cp fixes/InspectionNotificationReceiver.kt tc_manager/app/src/main/java/com/example/tcmanager/InspectionNotificationReceiver.kt
           cp fixes/AndroidManifest.xml tc_manager/app/src/main/AndroidManifest.xml
 
