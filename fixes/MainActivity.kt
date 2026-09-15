@@ -628,13 +628,8 @@ fun HomeScreen(
     onOpenPlan: (Complex) -> Unit
 ) {
 
-    val filteredList = list.filter {
-
-        searchText.isBlank() ||
-                it.name.contains(
-                    searchText,
-                    ignoreCase = true
-                )
+    val filteredList = list.filter { complex ->
+        complexMatchesSearch(complex, searchText)
     }
 
     LazyColumn(
@@ -671,7 +666,7 @@ fun HomeScreen(
                 modifier = Modifier.fillMaxWidth(),
 
                 label = {
-                    Text("Поиск арендатора или секции")
+                    Text("Поиск комплекса, секции или арендатора")
                 },
 
                 singleLine = true
@@ -690,34 +685,43 @@ fun HomeScreen(
             LazyRow(
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(
-                    items = filteredList,
-                    key = { it.id }
-                ) { complex ->
-                    Card(
-                        modifier = Modifier
-                            .size(156.dp)
-                            .clickable {
-                                onOpenPlan(complex)
-                            }
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(12.dp),
-                            verticalArrangement = Arrangement.Center
+                if (filteredList.isEmpty()) {
+                    item {
+                        Text(
+                            text = "Ничего не найдено",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                } else {
+                    items(
+                        items = filteredList,
+                        key = { it.id }
+                    ) { complex ->
+                        Card(
+                            modifier = Modifier
+                                .size(156.dp)
+                                .clickable {
+                                    onOpenPlan(complex)
+                                }
                         ) {
-                            Text(
-                                complex.name,
-                                style = MaterialTheme.typography.titleMedium
-                            )
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Text(
+                                    complex.name,
+                                    style = MaterialTheme.typography.titleMedium
+                                )
 
-                            Spacer(
-                                modifier = Modifier.height(8.dp)
-                            )
+                                Spacer(
+                                    modifier = Modifier.height(8.dp)
+                                )
 
-                            Text(
-                                "КАЛЕНДАРЬ КОМПЛЕКСНЫХ ПРОВЕРОК",
-                                style = MaterialTheme.typography.labelSmall
-                            )
+                                Text(
+                                    "КАЛЕНДАРЬ КОМПЛЕКСНЫХ ПРОВЕРОК",
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                            }
                         }
                     }
                 }
@@ -747,6 +751,46 @@ fun HomeScreen(
         }
     }
 }
+
+private fun complexMatchesSearch(
+    complex: Complex,
+    searchText: String
+): Boolean {
+    val query = normalizedSearchTokens(searchText)
+    if (query.isEmpty()) {
+        return true
+    }
+
+    val schedules = INSPECTION_DATES_BY_COMPLEX[complex.name].orEmpty().values
+    val searchableText = buildString {
+        append(complex.name)
+        schedules.forEach { schedule ->
+            append(' ')
+            append(schedule.date)
+            schedule.details.forEach { detail ->
+                append(' ')
+                append(detail)
+            }
+        }
+    }
+    val searchableTokens = normalizedSearchTokens(searchableText)
+
+    return query.all { token ->
+        searchableTokens.any { searchableToken ->
+            searchableToken.contains(token)
+        }
+    }
+}
+
+private fun normalizedSearchTokens(value: String): List<String> =
+    value
+        .lowercase(Locale("ru"))
+        .replace(Regex("[^\\p{L}\\p{Nd}]+"), " ")
+        .split(Regex("\\s+"))
+        .filter { it.isNotBlank() }
+        .map { token ->
+            token.trimStart('0').ifEmpty { "0" }
+        }
 
 @Composable
 fun ObjectsScreen(
