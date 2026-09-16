@@ -10,7 +10,6 @@ import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.Build
 import android.widget.Toast
-import android.util.Patterns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.ComponentActivity
@@ -1335,11 +1334,14 @@ private fun normalizeDialValue(display: String, digits: String): String =
         else -> digits
     }
 
+private val TENANT_EMAIL_PATTERN =
+    Regex("""(?i)^[^@\s]+@[^@\s]+\.[^@\s]+$""")
+
 private fun tenantEmailContacts(value: String): List<String> =
     value.split(';', ',', '\n')
         .asSequence()
-        .map { it.trim().trim('"', '\'') }
-        .filter { Patterns.EMAIL_ADDRESS.matcher(it).matches() }
+        .map { it.trim().trim('"', '\'', '<', '>') }
+        .filter { TENANT_EMAIL_PATTERN.matches(it) }
         .distinct()
         .toList()
 
