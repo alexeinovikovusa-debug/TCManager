@@ -1231,14 +1231,13 @@ private fun TenantPhoneFields(
         style = MaterialTheme.typography.bodyMedium
     )
     contacts.forEach { contact ->
-        val intent = Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", contact.dialValue, null))
         TenantDetailField(
             label = "",
             value = contact.displayValue,
             onClick = {
-                launchTenantIntent(
+                launchTenantPhoneIntent(
                     context,
-                    intent,
+                    contact.dialValue,
                     "Не удалось открыть приложение для звонков"
                 )
             }
@@ -1321,16 +1320,20 @@ private fun tenantPhoneContacts(value: String): List<TenantPhoneContact> {
                 } else {
                     TenantPhoneContact(
                         displayValue = display,
-                        dialValue = buildString {
-                            if (display.trimStart().startsWith("+")) append('+')
-                            append(digits)
-                        }
+                        dialValue = normalizeDialValue(display, digits)
                     )
                 }
             }.toList()
         }
         .distinctBy { it.dialValue }
 }
+
+private fun normalizeDialValue(display: String, digits: String): String =
+    when {
+        display.trimStart().startsWith("+") -> "+$digits"
+        digits.length == 11 && digits.startsWith('8') -> "+7${digits.drop(1)}"
+        else -> digits
+    }
 
 private fun tenantEmailContacts(value: String): List<String> =
     value.split(';', ',', '\n')
@@ -1351,6 +1354,31 @@ private fun mapIntent(address: String): Intent =
 private fun launchTenantIntent(context: Context, intent: Intent, errorMessage: String) {
     try {
         context.startActivity(intent)
+    } catch (_: ActivityNotFoundException) {
+        Toast.makeText(context, errorMessage, Toast.LENGTH_SHORT).show()
+    } catch (_: SecurityException) {
+        Toast.makeText(context, errorMessage, Toast.LENGTH_SHORT).show()
+    }
+}
+
+private fun launchTenantPhoneIntent(
+    context: Context,
+    dialValue: String,
+    errorMessage: String
+) {
+    val uri = Uri.parse("tel:$dialValue")
+    val dialIntent = Intent(Intent.ACTION_DIAL, uri)
+    try {
+        context.startActivity(dialIntent)
+        return
+    } catch (_: ActivityNotFoundException) {
+        // Try the generic URI handler below.
+    } catch (_: SecurityException) {
+        // Try the generic URI handler below.
+    }
+
+    try {
+        context.startActivity(Intent(Intent.ACTION_VIEW, uri))
     } catch (_: ActivityNotFoundException) {
         Toast.makeText(context, errorMessage, Toast.LENGTH_SHORT).show()
     } catch (_: SecurityException) {
