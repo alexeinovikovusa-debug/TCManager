@@ -980,9 +980,8 @@ private fun SettingsScreen(
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("О приложении", style = MaterialTheme.typography.titleMedium)
                 Spacer(modifier = Modifier.height(8.dp))
-                Text("Версия: ${BuildConfig.VERSION_NAME}")
-                Text("Номер версии: ${BuildConfig.VERSION_CODE}")
-                Text("Разработчик: Новиков Алексей")
+                Text("Версия: v${BuildConfig.VERSION_NAME}")
+                Text("Разработчик: Новиков А.С.")
             }
         }
     }
