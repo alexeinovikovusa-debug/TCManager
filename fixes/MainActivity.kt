@@ -7,6 +7,7 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.provider.OpenableColumns
 import android.os.Bundle
 import android.os.Build
 import android.widget.Toast
@@ -70,6 +71,7 @@ import com.example.tcmanager.data.AppDatabase
 import com.example.tcmanager.data.Complex
 import com.example.tcmanager.data.TenantRecord
 import com.example.tcmanager.data.TenantSeed
+import com.example.tcmanager.data.InspectionActAttachment
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -285,6 +287,22 @@ class MainViewModel(private val db: AppDatabase) : ViewModel() {
 
     val complexes: Flow<List<Complex>> = db.complexDao().all()
 
+    fun attachment(complexName: String, dateKey: String): Flow<InspectionActAttachment?> =
+        db.inspectionActAttachmentDao().observe(complexName, dateKey)
+
+    fun saveAttachment(
+        complexName: String,
+        dateKey: String,
+        uri: String,
+        displayName: String
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            db.inspectionActAttachmentDao().upsert(
+                InspectionActAttachment(complexName, dateKey, uri, displayName)
+            )
+        }
+    }
+
     fun seed() {
         viewModelScope.launch(Dispatchers.IO) {
             if (db.complexDao().count() == 0) {
@@ -332,17 +350,17 @@ class MainActivity : ComponentActivity() {
                 vm.seed()
             }
 
-            Dashboard(vm.complexes)
+            Dashboard(vm)
         }
     }
 }
 
 @Composable
 fun Dashboard(
-    complexes: Flow<List<Complex>>
+    viewModel: MainViewModel
 ) {
 
-    val list by complexes.collectAsState(
+    val list by viewModel.complexes.collectAsState(
         initial = emptyList()
     )
     val context = LocalContext.current
@@ -376,6 +394,29 @@ fun Dashboard(
         )
     }
     var showTimeSettings by remember { mutableStateOf(false) }
+    var pickerTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
+    val pickDocument = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        val target = pickerTarget
+        pickerTarget = null
+        if (uri != null && target != null) {
+            try {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (_: SecurityException) {
+                // Providers without persistable permissions can still be opened now.
+            }
+            viewModel.saveAttachment(
+                target.first,
+                target.second,
+                uri.toString(),
+                displayNameForUri(context, uri)
+            )
+        }
+    }
 
     LaunchedEffect(list) {
         rescheduleEnabledNotifications(context, list)
@@ -588,6 +629,10 @@ fun Dashboard(
     }
 
     selectedInspection?.let { inspection ->
+        val complexName = selectedComplex?.name.orEmpty()
+        val dateKey = inspection.date
+        val attachment by viewModel.attachment(complexName, dateKey)
+            .collectAsState(initial = null)
         AlertDialog(
             onDismissRequest = {
                 selectedInspection = null
@@ -598,23 +643,53 @@ fun Dashboard(
                 null
             },
             text = {
-                if (inspection.details.isEmpty()) {
-                    Text("Детали проверки не заданы.")
-                } else {
-                    Column {
+                Column {
+                    if (inspection.details.isEmpty()) {
+                        Text("Детали проверки не заданы.")
+                    } else {
                         inspection.details.forEach { detail ->
                             Text(detail)
                         }
                     }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        attachment?.let { "Акт: ${it.displayName}" } ?: "Акт не прикреплён",
+                        color = if (attachment == null) {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        } else {
+                            Color.Unspecified
+                        }
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        pickerTarget = complexName to dateKey
+                        pickDocument.launch(
+                            arrayOf(
+                                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                            )
+                        )
+                    }
+                ) {
+                    Text("Прикрепить акт")
                 }
             },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        selectedInspection = null
+                Row {
+                    if (attachment != null) {
+                        TextButton(
+                            onClick = {
+                                attachment?.let { openAttachment(context, it.uri) }
+                            }
+                        ) {
+                            Text("Открыть акт")
+                        }
                     }
-                ) {
-                    Text("Закрыть")
+                    TextButton(onClick = { selectedInspection = null }) {
+                        Text("Закрыть")
+                    }
                 }
             }
         )
@@ -1311,6 +1386,51 @@ private fun firstTenantContact(value: String): String =
 
 private fun hasIntentHandler(context: Context, intent: Intent): Boolean =
     context.packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY) != null
+
+private fun displayNameForUri(context: Context, uri: Uri): String {
+    val projection = arrayOf(OpenableColumns.DISPLAY_NAME)
+    context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+        val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+        if (nameIndex >= 0 && cursor.moveToFirst()) {
+            cursor.getString(nameIndex)?.takeIf { it.isNotBlank() }?.let { return it }
+        }
+    }
+    return uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
+        ?: "Акт проверки.docx"
+}
+
+private fun openAttachment(context: Context, uriValue: String) {
+    val intent = Intent(Intent.ACTION_VIEW).apply {
+        setDataAndType(
+            Uri.parse(uriValue),
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    if (!hasIntentHandler(context, intent)) {
+        Toast.makeText(
+            context,
+            "Не найдено приложение для открытия DOCX. Установите Word или офисный редактор.",
+            Toast.LENGTH_LONG
+        ).show()
+        return
+    }
+    try {
+        context.startActivity(intent)
+    } catch (_: ActivityNotFoundException) {
+        Toast.makeText(
+            context,
+            "Не удалось открыть акт. Установите Word или офисный редактор.",
+            Toast.LENGTH_LONG
+        ).show()
+    } catch (_: SecurityException) {
+        Toast.makeText(
+            context,
+            "Нет доступа к сохранённому файлу акта.",
+            Toast.LENGTH_LONG
+        ).show()
+    }
+}
 
 private fun launchTenantIntent(context: Context, intent: Intent, errorMessage: String) {
     try {

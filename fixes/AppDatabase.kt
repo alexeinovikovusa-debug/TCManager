@@ -2,7 +2,9 @@ package com.example.tcmanager.data
 
 import androidx.room.Dao
 import androidx.room.Database
+import androidx.room.Entity
 import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
@@ -31,6 +33,30 @@ interface InspectionDao {
     suspend fun insert(i: Inspection): Long
 }
 
+@Entity(
+    tableName = "inspection_act_attachments",
+    primaryKeys = ["complexName", "dateKey"]
+)
+data class InspectionActAttachment(
+    val complexName: String,
+    val dateKey: String,
+    val uri: String,
+    val displayName: String
+)
+
+@Dao
+interface InspectionActAttachmentDao {
+
+    @Query(
+        "SELECT * FROM inspection_act_attachments " +
+            "WHERE complexName = :complexName AND dateKey = :dateKey LIMIT 1"
+    )
+    fun observe(complexName: String, dateKey: String): Flow<InspectionActAttachment?>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(attachment: InspectionActAttachment)
+}
+
 @Database(
     entities = [
         Complex::class,
@@ -47,15 +73,17 @@ interface InspectionDao {
         Project::class,
         ProjectFile::class,
         Inspection::class,
-        InspectionAct::class
+        InspectionAct::class,
+        InspectionActAttachment::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun complexDao(): ComplexDao
     abstract fun inspectionDao(): InspectionDao
+    abstract fun inspectionActAttachmentDao(): InspectionActAttachmentDao
 
     companion object {
         @Volatile
@@ -68,10 +96,27 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "tc_manager.db"
                 )
+                    .addMigrations(MIGRATION_1_2)
                     .build()
                     .also {
                         INSTANCE = it
                     }
             }
+
+        private val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS inspection_act_attachments (
+                        complexName TEXT NOT NULL,
+                        dateKey TEXT NOT NULL,
+                        uri TEXT NOT NULL,
+                        displayName TEXT NOT NULL,
+                        PRIMARY KEY(complexName, dateKey)
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
     }
 }
