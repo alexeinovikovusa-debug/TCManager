@@ -1299,10 +1299,9 @@ private data class TenantPhoneContact(
 private fun tenantPhoneContacts(value: String): List<TenantPhoneContact> {
     if (value.isBlank()) return emptyList()
 
-    val withoutExtensions = value.replace(
-        Regex("""(?iu)\bдоб\.?\s*"""),
-        ";"
-    ).replace(Regex("""(?<=\d)\s+(?=\+?7(?:[\s(-])|8(?:[\s(-]))"""), ";")
+    val withoutExtensions = value
+        .replace(Regex("""(?iu)\s*\(?\s*доб\.?\s*\d[\d\s-]*\s*\)?"""), "")
+        .replace(Regex("""(?<=\d)\s+(?=\+?7(?:[\s(-])|8(?:[\s(-]))"""), ";")
     val phonePattern = Regex("""(?<!\d)\+?\d[\d\s().-]*\d(?!\d)""")
 
     return withoutExtensions
