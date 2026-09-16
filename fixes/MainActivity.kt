@@ -10,6 +10,7 @@ import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.Build
 import android.widget.Toast
+import android.util.Patterns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.ComponentActivity
@@ -1163,15 +1164,10 @@ private fun TenantListDialog(
 
     selectedTenant?.let { tenant ->
         val context = LocalContext.current
-        val email = firstTenantContact(tenant.email)
+        val emailContacts = tenantEmailContacts(tenant.email)
         val phoneContacts = tenantPhoneContacts(tenant.phone)
         val address = tenant.address.trim().trim('"', '\'')
-        val emailIntent = email.takeIf { it.isNotBlank() }?.let {
-            Intent(Intent.ACTION_SENDTO, Uri.fromParts("mailto", it, null))
-        }
-        val addressIntent = address.takeIf { it.isNotBlank() }?.let {
-            Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=${Uri.encode(it)}"))
-        }
+        val addressIntent = address.takeIf(::isMapAddress)?.let(::mapIntent)
         AlertDialog(
             onDismissRequest = { selectedTenant = null },
             title = { Text(tenant.tenant) },
@@ -1191,18 +1187,22 @@ private fun TenantListDialog(
                         contacts = phoneContacts,
                         context = context
                     )
-                    TenantDetailField(
-                        "E-mail",
-                        tenant.email,
-                        onClick = emailIntent?.takeIf { hasIntentHandler(context, it) }?.let {
-                            { launchTenantIntent(context, it, "Не удалось открыть почтовое приложение") }
-                        }
+                    TenantEmailFields(
+                        originalValue = tenant.email,
+                        contacts = emailContacts,
+                        context = context
                     )
                     TenantDetailField(
                         "Адрес",
                         tenant.address,
-                        onClick = addressIntent?.takeIf { hasIntentHandler(context, it) }?.let {
-                            { launchTenantIntent(context, it, "Не удалось открыть приложение карт") }
+                        onClick = addressIntent?.let {
+                            {
+                                launchTenantIntent(
+                                    context,
+                                    it,
+                                    "Не удалось открыть приложение карт"
+                                )
+                            }
                         }
                     )
                 }
@@ -1236,13 +1236,43 @@ private fun TenantPhoneFields(
             label = "",
             value = contact.displayValue,
             onClick = {
-                if (hasIntentHandler(context, intent)) {
-                    launchTenantIntent(
-                        context,
-                        intent,
-                        "Не удалось открыть приложение для звонков"
-                    )
-                }
+                launchTenantIntent(
+                    context,
+                    intent,
+                    "Не удалось открыть приложение для звонков"
+                )
+            }
+        )
+    }
+}
+
+@Composable
+private fun TenantEmailFields(
+    originalValue: String,
+    contacts: List<String>,
+    context: Context
+) {
+    if (contacts.isEmpty()) {
+        TenantDetailField("E-mail", originalValue)
+        return
+    }
+
+    Text(
+        "E-mail:",
+        modifier = Modifier.padding(top = 3.dp),
+        style = MaterialTheme.typography.bodyMedium
+    )
+    contacts.forEach { email ->
+        val intent = Intent(Intent.ACTION_SENDTO, Uri.fromParts("mailto", email, null))
+        TenantDetailField(
+            label = "",
+            value = email,
+            onClick = {
+                launchTenantIntent(
+                    context,
+                    intent,
+                    "Не удалось открыть почтовое приложение"
+                )
             }
         )
     }
@@ -1302,15 +1332,21 @@ private fun tenantPhoneContacts(value: String): List<TenantPhoneContact> {
         .distinctBy { it.dialValue }
 }
 
-private fun firstTenantContact(value: String): String =
+private fun tenantEmailContacts(value: String): List<String> =
     value.split(';', ',', '\n')
         .asSequence()
         .map { it.trim().trim('"', '\'') }
-        .firstOrNull { it.isNotBlank() }
-        .orEmpty()
+        .filter { Patterns.EMAIL_ADDRESS.matcher(it).matches() }
+        .distinct()
+        .toList()
 
-private fun hasIntentHandler(context: Context, intent: Intent): Boolean =
-    context.packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY) != null
+private fun isMapAddress(address: String): Boolean =
+    address.length >= 5 &&
+        address.any(Char::isLetter) &&
+        address.any(Char::isDigit)
+
+private fun mapIntent(address: String): Intent =
+    Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=${Uri.encode(address)}"))
 
 private fun launchTenantIntent(context: Context, intent: Intent, errorMessage: String) {
     try {
