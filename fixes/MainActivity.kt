@@ -1427,6 +1427,9 @@ private fun isMapAddress(address: String): Boolean =
 private fun mapIntent(address: String): Intent =
     Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=${Uri.encode(address)}"))
 
+private fun hasIntentHandler(context: Context, intent: Intent): Boolean =
+    context.packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY) != null
+
 private fun displayNameForUri(context: Context, uri: Uri): String {
     val projection = arrayOf(OpenableColumns.DISPLAY_NAME)
     context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
