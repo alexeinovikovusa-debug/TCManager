@@ -1155,13 +1155,10 @@ private fun TenantListDialog(
     selectedTenant?.let { tenant ->
         val context = LocalContext.current
         val email = firstTenantContact(tenant.email)
-        val phone = firstTenantContact(tenant.phone)
+        val phoneContacts = tenantPhoneContacts(tenant.phone)
         val address = tenant.address.trim().trim('"', '\'')
         val emailIntent = email.takeIf { it.isNotBlank() }?.let {
             Intent(Intent.ACTION_SENDTO, Uri.fromParts("mailto", it, null))
-        }
-        val phoneIntent = phone.takeIf { it.isNotBlank() }?.let {
-            Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", it, null))
         }
         val addressIntent = address.takeIf { it.isNotBlank() }?.let {
             Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=${Uri.encode(it)}"))
@@ -1180,12 +1177,10 @@ private fun TenantListDialog(
                     TenantDetailField("Дата окончания", tenant.leaseEnd)
                     TenantDetailField("Бренд", tenant.brand)
                     TenantDetailField("Вид деятельности", tenant.activity)
-                    TenantDetailField(
-                        "Телефон",
-                        tenant.phone,
-                        onClick = phoneIntent?.takeIf { hasIntentHandler(context, it) }?.let {
-                            { launchTenantIntent(context, it, "Не удалось открыть приложение для звонков") }
-                        }
+                    TenantPhoneFields(
+                        originalValue = tenant.phone,
+                        contacts = phoneContacts,
+                        context = context
                     )
                     TenantDetailField(
                         "E-mail",
@@ -1211,18 +1206,91 @@ private fun TenantListDialog(
 }
 
 @Composable
+private fun TenantPhoneFields(
+    originalValue: String,
+    contacts: List<TenantPhoneContact>,
+    context: Context
+) {
+    if (contacts.isEmpty()) {
+        TenantDetailField("Телефон", originalValue)
+        return
+    }
+
+    Text(
+        "Телефон:",
+        modifier = Modifier.padding(top = 3.dp),
+        style = MaterialTheme.typography.bodyMedium
+    )
+    contacts.forEach { contact ->
+        val intent = Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", contact.dialValue, null))
+        TenantDetailField(
+            label = "",
+            value = contact.displayValue,
+            onClick = {
+                if (hasIntentHandler(context, intent)) {
+                    launchTenantIntent(
+                        context,
+                        intent,
+                        "Не удалось открыть приложение для звонков"
+                    )
+                }
+            }
+        )
+    }
+}
+
+@Composable
 private fun TenantDetailField(
     label: String,
     value: String,
     onClick: (() -> Unit)? = null
 ) {
     Text(
-        "$label: ${value.ifBlank { "—" }}",
+        if (label.isBlank()) value.ifBlank { "—" } else "$label: ${value.ifBlank { "—" }}",
         modifier = Modifier
             .padding(vertical = 3.dp)
             .clickable(enabled = onClick != null) { onClick?.invoke() },
         color = if (onClick != null) MaterialTheme.colorScheme.primary else Color.Unspecified
     )
+}
+
+private data class TenantPhoneContact(
+    val displayValue: String,
+    val dialValue: String
+)
+
+private fun tenantPhoneContacts(value: String): List<TenantPhoneContact> {
+    if (value.isBlank()) return emptyList()
+
+    val withoutExtensions = value.replace(
+        Regex("""(?iu)\bдоб\.?\s*"""),
+        ";"
+    ).replace(Regex("""(?<=\d)\s+(?=\+?7(?:[\s(-])|8(?:[\s(-]))"""), ";")
+    val phonePattern = Regex("""(?<!\d)\+?\d[\d\s().-]*\d(?!\d)""")
+
+    return withoutExtensions
+        .split(';', ',', '\n')
+        .flatMap { part ->
+            phonePattern.findAll(part).mapNotNull { match ->
+                val display = match.value
+                    .trim()
+                    .trim('"', '\'')
+                    .replace(Regex("""\s*\(\s*\d{3,5}\s*\)$"""), "")
+                val digits = display.filter(Char::isDigit)
+                if (digits.length < 5) {
+                    null
+                } else {
+                    TenantPhoneContact(
+                        displayValue = display,
+                        dialValue = buildString {
+                            if (display.trimStart().startsWith("+")) append('+')
+                            append(digits)
+                        }
+                    )
+                }
+            }.toList()
+        }
+        .distinctBy { it.dialValue }
 }
 
 private fun firstTenantContact(value: String): String =
@@ -1239,6 +1307,8 @@ private fun launchTenantIntent(context: Context, intent: Intent, errorMessage: S
     try {
         context.startActivity(intent)
     } catch (_: ActivityNotFoundException) {
+        Toast.makeText(context, errorMessage, Toast.LENGTH_SHORT).show()
+    } catch (_: SecurityException) {
         Toast.makeText(context, errorMessage, Toast.LENGTH_SHORT).show()
     }
 }
