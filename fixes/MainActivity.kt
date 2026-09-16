@@ -975,6 +975,16 @@ private fun SettingsScreen(
                 }
             }
         }
+        Spacer(modifier = Modifier.height(12.dp))
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("О приложении", style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Версия: ${BuildConfig.VERSION_NAME}")
+                Text("Номер версии: ${BuildConfig.VERSION_CODE}")
+                Text("Разработчик: Новиков Алексей")
+            }
+        }
     }
 }
 

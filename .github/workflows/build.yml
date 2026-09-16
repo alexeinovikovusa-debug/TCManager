@@ -48,6 +48,12 @@ jobs:
           cp fixes/res/mipmap-anydpi-v26/ic_launcher_round.xml tc_manager/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
           cp fixes/res/values/colors.xml tc_manager/app/src/main/res/values/colors.xml
 
+      - name: Set build version
+        run: |
+          VERSION_CODE="${GITHUB_RUN_NUMBER}"
+          VERSION_NAME="0.1.${GITHUB_RUN_NUMBER}"
+          sed -i -E "s/versionCode = [0-9]+; versionName = \"[^\"]+\"/versionCode = ${VERSION_CODE}; versionName = \"${VERSION_NAME}\"/" tc_manager/app/build.gradle.kts
+
       - name: Check source files
         run: |
           echo "=== MainActivity.kt ==="
