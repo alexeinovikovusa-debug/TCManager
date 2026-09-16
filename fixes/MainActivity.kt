@@ -1163,15 +1163,10 @@ private fun TenantListDialog(
 
     selectedTenant?.let { tenant ->
         val context = LocalContext.current
-        val email = firstTenantContact(tenant.email)
+        val emailContacts = tenantEmailContacts(tenant.email)
         val phoneContacts = tenantPhoneContacts(tenant.phone)
         val address = tenant.address.trim().trim('"', '\'')
-        val emailIntent = email.takeIf { it.isNotBlank() }?.let {
-            Intent(Intent.ACTION_SENDTO, Uri.fromParts("mailto", it, null))
-        }
-        val addressIntent = address.takeIf { it.isNotBlank() }?.let {
-            Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=${Uri.encode(it)}"))
-        }
+        val addressIntent = address.takeIf(::isMapAddress)?.let(::mapIntent)
         AlertDialog(
             onDismissRequest = { selectedTenant = null },
             title = { Text(tenant.tenant) },
@@ -1191,18 +1186,22 @@ private fun TenantListDialog(
                         contacts = phoneContacts,
                         context = context
                     )
-                    TenantDetailField(
-                        "E-mail",
-                        tenant.email,
-                        onClick = emailIntent?.takeIf { hasIntentHandler(context, it) }?.let {
-                            { launchTenantIntent(context, it, "Не удалось открыть почтовое приложение") }
-                        }
+                    TenantEmailFields(
+                        originalValue = tenant.email,
+                        contacts = emailContacts,
+                        context = context
                     )
                     TenantDetailField(
                         "Адрес",
                         tenant.address,
-                        onClick = addressIntent?.takeIf { hasIntentHandler(context, it) }?.let {
-                            { launchTenantIntent(context, it, "Не удалось открыть приложение карт") }
+                        onClick = addressIntent?.let {
+                            {
+                                launchTenantIntent(
+                                    context,
+                                    it,
+                                    "Не удалось открыть приложение карт"
+                                )
+                            }
                         }
                     )
                 }
@@ -1231,18 +1230,47 @@ private fun TenantPhoneFields(
         style = MaterialTheme.typography.bodyMedium
     )
     contacts.forEach { contact ->
-        val intent = Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", contact.dialValue, null))
         TenantDetailField(
             label = "",
             value = contact.displayValue,
             onClick = {
-                if (hasIntentHandler(context, intent)) {
-                    launchTenantIntent(
-                        context,
-                        intent,
-                        "Не удалось открыть приложение для звонков"
-                    )
-                }
+                launchTenantPhoneIntent(
+                    context,
+                    contact.dialValue,
+                    "Не удалось открыть приложение для звонков"
+                )
+            }
+        )
+    }
+}
+
+@Composable
+private fun TenantEmailFields(
+    originalValue: String,
+    contacts: List<String>,
+    context: Context
+) {
+    if (contacts.isEmpty()) {
+        TenantDetailField("E-mail", originalValue)
+        return
+    }
+
+    Text(
+        "E-mail:",
+        modifier = Modifier.padding(top = 3.dp),
+        style = MaterialTheme.typography.bodyMedium
+    )
+    contacts.forEach { email ->
+        val intent = Intent(Intent.ACTION_SENDTO, Uri.fromParts("mailto", email, null))
+        TenantDetailField(
+            label = "",
+            value = email,
+            onClick = {
+                launchTenantIntent(
+                    context,
+                    intent,
+                    "Не удалось открыть почтовое приложение"
+                )
             }
         )
     }
@@ -1271,10 +1299,9 @@ private data class TenantPhoneContact(
 private fun tenantPhoneContacts(value: String): List<TenantPhoneContact> {
     if (value.isBlank()) return emptyList()
 
-    val withoutExtensions = value.replace(
-        Regex("""(?iu)\bдоб\.?\s*"""),
-        ";"
-    ).replace(Regex("""(?<=\d)\s+(?=\+?7(?:[\s(-])|8(?:[\s(-]))"""), ";")
+    val withoutExtensions = value
+        .replace(Regex("""(?iu)\s*\(?\s*доб\.?\s*\d[\d\s-]*\s*\)?"""), "")
+        .replace(Regex("""(?<=\d)\s+(?=\+?7(?:[\s(-])|8(?:[\s(-]))"""), ";")
     val phonePattern = Regex("""(?<!\d)\+?\d[\d\s().-]*\d(?!\d)""")
 
     return withoutExtensions
@@ -1291,10 +1318,7 @@ private fun tenantPhoneContacts(value: String): List<TenantPhoneContact> {
                 } else {
                     TenantPhoneContact(
                         displayValue = display,
-                        dialValue = buildString {
-                            if (display.trimStart().startsWith("+")) append('+')
-                            append(digits)
-                        }
+                        dialValue = normalizeDialValue(display, digits)
                     )
                 }
             }.toList()
@@ -1302,19 +1326,60 @@ private fun tenantPhoneContacts(value: String): List<TenantPhoneContact> {
         .distinctBy { it.dialValue }
 }
 
-private fun firstTenantContact(value: String): String =
+private fun normalizeDialValue(display: String, digits: String): String =
+    when {
+        display.trimStart().startsWith("+") -> "+$digits"
+        digits.length == 11 && digits.startsWith('8') -> "+7${digits.drop(1)}"
+        else -> digits
+    }
+
+private val TENANT_EMAIL_PATTERN =
+    Regex("""(?i)^[^@\s]+@[^@\s]+\.[^@\s]+$""")
+
+private fun tenantEmailContacts(value: String): List<String> =
     value.split(';', ',', '\n')
         .asSequence()
-        .map { it.trim().trim('"', '\'') }
-        .firstOrNull { it.isNotBlank() }
-        .orEmpty()
+        .map { it.trim().trim('"', '\'', '<', '>') }
+        .filter { TENANT_EMAIL_PATTERN.matches(it) }
+        .distinct()
+        .toList()
 
-private fun hasIntentHandler(context: Context, intent: Intent): Boolean =
-    context.packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY) != null
+private fun isMapAddress(address: String): Boolean =
+    address.length >= 5 &&
+        address.any(Char::isLetter) &&
+        address.any(Char::isDigit)
+
+private fun mapIntent(address: String): Intent =
+    Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=${Uri.encode(address)}"))
 
 private fun launchTenantIntent(context: Context, intent: Intent, errorMessage: String) {
     try {
         context.startActivity(intent)
+    } catch (_: ActivityNotFoundException) {
+        Toast.makeText(context, errorMessage, Toast.LENGTH_SHORT).show()
+    } catch (_: SecurityException) {
+        Toast.makeText(context, errorMessage, Toast.LENGTH_SHORT).show()
+    }
+}
+
+private fun launchTenantPhoneIntent(
+    context: Context,
+    dialValue: String,
+    errorMessage: String
+) {
+    val uri = Uri.parse("tel:$dialValue")
+    val dialIntent = Intent(Intent.ACTION_DIAL, uri)
+    try {
+        context.startActivity(dialIntent)
+        return
+    } catch (_: ActivityNotFoundException) {
+        // Try the generic URI handler below.
+    } catch (_: SecurityException) {
+        // Try the generic URI handler below.
+    }
+
+    try {
+        context.startActivity(Intent(Intent.ACTION_VIEW, uri))
     } catch (_: ActivityNotFoundException) {
         Toast.makeText(context, errorMessage, Toast.LENGTH_SHORT).show()
     } catch (_: SecurityException) {
