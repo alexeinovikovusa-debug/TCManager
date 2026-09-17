@@ -1220,37 +1220,6 @@ private fun TenantsFilterDialog(
     )
 }
 
-private fun normalizedSearchValue(value: String): String =
-    value.filter { it.isLetterOrDigit() }.lowercase(Locale.ROOT)
-
-private fun tenantMatchesSearch(tenant: TenantRecord, searchText: String): Boolean {
-    val query = searchText.trim()
-    if (query.isBlank()) {
-        return false
-    }
-
-    val normalizedQuery = normalizedSearchValue(query)
-    return listOf(
-        tenant.section,
-        tenant.floorOrType,
-        tenant.tenant,
-        tenant.brand,
-        tenant.activity,
-        tenant.phone,
-        tenant.email
-    ).any { value ->
-        value.isNotBlank() &&
-                (
-                    value.contains(query, ignoreCase = true) ||
-                        (
-                            normalizedQuery.isNotBlank() &&
-                                normalizedSearchValue(value).contains(normalizedQuery)
-                            )
-                    )
-    }
-}
-
-
 @Composable
 private fun SettingsScreen(
     notificationTime: String,
