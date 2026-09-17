@@ -1421,10 +1421,13 @@ private fun TenantListDialog(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
             ) {
-                Text("Арендаторы — Континент")
+                Text(
+                    "Арендаторы — Континент",
+                    modifier = Modifier.weight(1f)
+                )
                 Button(
                     onClick = { showFiltersDialog = true },
-                    modifier = Modifier.size(height = 36.dp, width = 80.dp)
+                    modifier = Modifier.height(36.dp)
                 ) {
                     Text("Фильтры${if (filters.countActive() > 0) " (${filters.countActive()})" else ""}")
                 }
