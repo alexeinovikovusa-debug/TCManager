@@ -61,6 +61,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import android.net.Uri
+import java.time.DateTimeException
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
@@ -72,6 +73,7 @@ import java.util.Calendar
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.room.withTransaction
 import com.example.tcmanager.data.AppDatabase
 import com.example.tcmanager.data.Complex
 import com.example.tcmanager.data.TenantRecord
@@ -1437,6 +1439,24 @@ private data class TenantImportPreview(val rows: List<TenantRecord>, val total: 
 private fun normalizeHeader(value: String): String =
     value.lowercase(Locale("ru")).replace("ё", "е").replace(Regex("[^а-яa-z0-9]"), "")
 
+private fun normalizeImportedSection(value: String): String =
+    value.trim().substringBefore('/').trim()
+
+private fun normalizeImportedLeaseDate(value: String): String {
+    val normalized = value.trim().trim('"', '\'')
+    val serial = normalized.toDoubleOrNull()
+    if (serial != null && serial >= 1 && serial <= 2958465) {
+        return try {
+            LocalDate.of(1899, 12, 30)
+                .plusDays(serial.toLong())
+                .format(DateTimeFormatter.ofPattern("dd.MM.uuuu"))
+        } catch (_: DateTimeException) {
+            normalized
+        }
+    }
+    return normalized
+}
+
 private fun parseTenantXlsx(context: Context, uri: Uri): TenantImportPreview {
     val entries = mutableMapOf<String, ByteArray>()
     context.contentResolver.openInputStream(uri)?.use { input ->
@@ -1499,26 +1519,42 @@ private fun parseTenantXlsx(context: Context, uri: Uri): TenantImportPreview {
     }
     if (rows.isEmpty()) error("Лист XLSX пуст")
     val aliases = mapOf(
-        "section" to setOf("секция", "секцияпомещение", "помещение", "section", "номерпомещения", "номерсекции", "секцияномер"),
+        "section" to setOf("номер", "секция", "секцияпомещение", "помещение", "section", "номерпомещения", "номерсекции", "секцияномер"),
         "floor" to setOf("этаж", "этажтип", "этажтиппомещения", "этажтиппомещения", "floor"),
         "lease" to setOf("окончаниедоговора", "срокдоговора", "датаокончания", "датаокончаниядоговора", "leaseend", "дата"),
         "tenant" to setOf("арендатор", "наименованиеарендатора", "наименование", "tenant", "контрагент"),
         "brand" to setOf("бренд", "торговаямарка", "торговыйбренд", "brand"),
         "activity" to setOf("виддеятельности", "виддеятельностиарендатора", "деятельность", "activity"),
-        "phone" to setOf("телефон", "телефоны", "phone"),
-        "email" to setOf("email", "электроннаяпочта", "почта"),
-        "address" to setOf("адрес", "address")
+        "phone" to setOf("телефон", "телефоны", "телефонарендатора", "phone"),
+        "email" to setOf("email", "электроннаяпочта", "почта", "emailарендатора"),
+        "address" to setOf("адрес", "адресарендатора", "address")
     )
     val headers = rows.first().map { normalizeHeader(it) }
-    val columns = aliases.mapValues { (_, names) -> headers.indexOfFirst { it in names } }
+    val columns = aliases.mapValues { (_, names) -> headers.indexOfFirst { it in names } }.toMutableMap()
+    val sourceFormat = headers.getOrNull(0) == "номер" &&
+        headers.getOrNull(2) in aliases.getValue("tenant")
+    if (sourceFormat) {
+        mapOf(
+            "section" to 0,
+            "lease" to 1,
+            "tenant" to 2,
+            "brand" to 3,
+            "activity" to 4,
+            "phone" to 5,
+            "email" to 6,
+            "address" to 7
+        ).forEach { (key, index) ->
+            if ((columns[key] ?: -1) < 0 && index < headers.size) columns[key] = index
+        }
+    }
     if (columns["section"] ?: -1 < 0 || columns["tenant"] ?: -1 < 0)
-        error("Не найдены обязательные заголовки «Секция» и «Арендатор»")
+        error("Не найдены обязательные заголовки. Ожидаются «Номер» (или «Секция») и «Наименование арендатора» (или «Арендатор»).")
     fun value(row: List<String>, key: String) = row.getOrNull(columns[key] ?: -1).orEmpty().trim()
     val records = rows.drop(1).mapNotNull { row ->
-        val section = value(row, "section")
+        val section = normalizeImportedSection(value(row, "section"))
         val tenant = value(row, "tenant")
         if (section.isBlank() || tenant.isBlank()) null
-        else TenantRecord(section, value(row, "floor"), value(row, "lease"), tenant, value(row, "brand"), value(row, "activity"), value(row, "phone"), value(row, "email"), value(row, "address"))
+        else TenantRecord(section, value(row, "floor"), normalizeImportedLeaseDate(value(row, "lease")), tenant, value(row, "brand"), value(row, "activity"), value(row, "phone"), value(row, "email"), value(row, "address"))
     }.distinctBy { it.section to it.tenant }
     if (records.isEmpty()) error("В XLSX нет строк арендаторов")
     return TenantImportPreview(records, records.size)
@@ -1527,26 +1563,28 @@ private fun parseTenantXlsx(context: Context, uri: Uri): TenantImportPreview {
 private data class TenantMergeSummary(val added: Int, val updated: Int, val skipped: Int)
 
 private suspend fun mergeTenantImport(db: AppDatabase, rows: List<TenantRecord>): TenantMergeSummary {
-    val dao = db.tenantImportDao()
-    val existing = dao.all().associateBy { it.section }
-    val current = if (existing.isEmpty()) TenantSeed.all.map { ImportedTenant.from(it) } else existing.values.toList()
-    dao.backup(current.map {
-        com.example.tcmanager.data.TenantImportBackup(
-            backedUpAt = System.currentTimeMillis(), section = it.section, tenant = it.tenant,
-            floorOrType = it.floorOrType, leaseEnd = it.leaseEnd, brand = it.brand,
-            activity = it.activity, phone = it.phone, email = it.email, address = it.address
-        )
-    })
-    var added = 0; var updated = 0; var skipped = 0
-    rows.forEach { record ->
-        val old = existing[record.section]
-        when {
-            old == null -> { added++; dao.upsert(ImportedTenant.from(record)) }
-            old.record() == record -> skipped++
-            else -> { updated++; dao.upsert(ImportedTenant.from(record)) }
+    return db.withTransaction {
+        val dao = db.tenantImportDao()
+        val existing = dao.all().associateBy { it.section }
+        val current = if (existing.isEmpty()) TenantSeed.all.map { ImportedTenant.from(it) } else existing.values.toList()
+        dao.backup(current.map {
+            com.example.tcmanager.data.TenantImportBackup(
+                backedUpAt = System.currentTimeMillis(), section = it.section, tenant = it.tenant,
+                floorOrType = it.floorOrType, leaseEnd = it.leaseEnd, brand = it.brand,
+                activity = it.activity, phone = it.phone, email = it.email, address = it.address
+            )
+        })
+        var added = 0; var updated = 0; var skipped = 0
+        rows.forEach { record ->
+            val old = existing[record.section]
+            when {
+                old == null -> { added++; dao.upsert(ImportedTenant.from(record)) }
+                old.record() == record -> skipped++
+                else -> { updated++; dao.upsert(ImportedTenant.from(record)) }
+            }
         }
+        TenantMergeSummary(added, updated, skipped)
     }
-    return TenantMergeSummary(added, updated, skipped)
 }
 
 @Composable
