@@ -1033,6 +1033,225 @@ private fun tenantMatchesSearch(tenant: TenantRecord, searchText: String): Boole
 }
 
 @Composable
+private fun TenantsFilterDialog(
+    filters: TenantFilters,
+    allSections: List<String>,
+    allFloors: List<String>,
+    allActivities: List<String>,
+    onFiltersChanged: (TenantFilters) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Фильтры") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                if (allSections.isNotEmpty()) {
+                    Text("Секция", style = MaterialTheme.typography.titleSmall)
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        items(allSections) { section ->
+                            Button(
+                                onClick = {
+                                    val newSections = filters.sections.toMutableSet()
+                                    if (section in newSections) {
+                                        newSections.remove(section)
+                                    } else {
+                                        newSections.add(section)
+                                    }
+                                    onFiltersChanged(filters.copy(sections = newSections))
+                                },
+                                modifier = Modifier.size(height = 32.dp, width = 60.dp)
+                            ) {
+                                Text(
+                                    if (section in filters.sections) "✓ $section" else section,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (allFloors.isNotEmpty()) {
+                    Text("Этаж/тип помещения", style = MaterialTheme.typography.titleSmall)
+                    LazyColumn(
+                        modifier = Modifier.heightIn(max = 150.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        items(allFloors) { floor ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        val newFloors = filters.floors.toMutableSet()
+                                        if (floor in newFloors) {
+                                            newFloors.remove(floor)
+                                        } else {
+                                            newFloors.add(floor)
+                                        }
+                                        onFiltersChanged(filters.copy(floors = newFloors))
+                                    }
+                                    .padding(8.dp),
+                                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    if (floor in filters.floors) "☑" else "☐",
+                                    modifier = Modifier.size(20.dp),
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                Text(floor, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                }
+
+                if (allActivities.isNotEmpty()) {
+                    Text("Вид деятельности", style = MaterialTheme.typography.titleSmall)
+                    LazyColumn(
+                        modifier = Modifier.heightIn(max = 200.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        items(allActivities) { activity ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        val newActivities = filters.activities.toMutableSet()
+                                        if (activity in newActivities) {
+                                            newActivities.remove(activity)
+                                        } else {
+                                            newActivities.add(activity)
+                                        }
+                                        onFiltersChanged(filters.copy(activities = newActivities))
+                                    }
+                                    .padding(8.dp),
+                                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    if (activity in filters.activities) "☑" else "☐",
+                                    modifier = Modifier.size(20.dp),
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                Text(activity, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                }
+
+                Text("Наличие контактов", style = MaterialTheme.typography.titleSmall)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            onFiltersChanged(filters.copy(hasPhone = !filters.hasPhone))
+                        }
+                        .padding(8.dp),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        if (filters.hasPhone) "☑" else "☐",
+                        modifier = Modifier.size(20.dp),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text("Имеется телефон", style = MaterialTheme.typography.bodySmall)
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            onFiltersChanged(filters.copy(hasEmail = !filters.hasEmail))
+                        }
+                        .padding(8.dp),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        if (filters.hasEmail) "☑" else "☐",
+                        modifier = Modifier.size(20.dp),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text("Имеется email", style = MaterialTheme.typography.bodySmall)
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            onFiltersChanged(filters.copy(hasAddress = !filters.hasAddress))
+                        }
+                        .padding(8.dp),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        if (filters.hasAddress) "☑" else "☐",
+                        modifier = Modifier.size(20.dp),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text("Имеется адрес", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = {
+                onFiltersChanged(TenantFilters())
+                onDismiss()
+            }) {
+                Text("Сброс")
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("ОК")
+            }
+        }
+    )
+}
+
+private fun normalizedSearchValue(value: String): String =
+    value.filter { it.isLetterOrDigit() }.lowercase(Locale.ROOT)
+
+private fun tenantMatchesSearch(tenant: TenantRecord, searchText: String): Boolean {
+    val query = searchText.trim()
+    if (query.isBlank()) {
+        return false
+    }
+
+    val normalizedQuery = normalizedSearchValue(query)
+    return listOf(
+        tenant.section,
+        tenant.floorOrType,
+        tenant.tenant,
+        tenant.brand,
+        tenant.activity,
+        tenant.phone,
+        tenant.email
+    ).any { value ->
+        value.isNotBlank() &&
+                (
+                    value.contains(query, ignoreCase = true) ||
+                        (
+                            normalizedQuery.isNotBlank() &&
+                                normalizedSearchValue(value).contains(normalizedQuery)
+                            )
+                    )
+    }
+}
+
+
+@Composable
 private fun SettingsScreen(
     notificationTime: String,
     onOpenTimeSettings: () -> Unit
@@ -1169,6 +1388,36 @@ fun TenantsScreen(
     }
 }
 
+private data class TenantFilters(
+    val sections: Set<String> = emptySet(),
+    val floors: Set<String> = emptySet(),
+    val activities: Set<String> = emptySet(),
+    val hasPhone: Boolean = false,
+    val hasEmail: Boolean = false,
+    val hasAddress: Boolean = false
+) {
+    fun isEmpty(): Boolean =
+        sections.isEmpty() && floors.isEmpty() && activities.isEmpty() &&
+        !hasPhone && !hasEmail && !hasAddress
+
+    fun countActive(): Int =
+        sections.size + floors.size + activities.size +
+        (if (hasPhone) 1 else 0) + (if (hasEmail) 1 else 0) + (if (hasAddress) 1 else 0)
+}
+
+private fun tenantMatchesFilters(tenant: TenantRecord, filters: TenantFilters): Boolean {
+    if (filters.isEmpty()) return true
+
+    if (filters.sections.isNotEmpty() && tenant.section !in filters.sections) return false
+    if (filters.floors.isNotEmpty() && tenant.floorOrType !in filters.floors) return false
+    if (filters.activities.isNotEmpty() && tenant.activity !in filters.activities) return false
+    if (filters.hasPhone && tenant.phone.isBlank()) return false
+    if (filters.hasEmail && tenant.email.isBlank()) return false
+    if (filters.hasAddress && tenant.address.isBlank()) return false
+
+    return true
+}
+
 @Composable
 private fun TenantListDialog(
     initialSearchText: String = "",
@@ -1178,15 +1427,40 @@ private fun TenantListDialog(
         mutableStateOf(initialSearchText)
     }
     var selectedTenant by remember { mutableStateOf<TenantRecord?>(null) }
-    val tenants = remember(searchText) {
-        TenantSeed.all.filter { tenant ->
-            searchText.isBlank() || tenantMatchesSearch(tenant, searchText)
-        }
+    var filters by remember { mutableStateOf(TenantFilters()) }
+    var showFiltersDialog by remember { mutableStateOf(false) }
+
+    val tenants = remember(searchText, filters) {
+        TenantSeed.all
+            .filter { tenant ->
+                tenantMatchesFilters(tenant, filters)
+            }
+            .filter { tenant ->
+                searchText.isBlank() || tenantMatchesSearch(tenant, searchText)
+            }
     }
+
+    val allSections = remember { TenantSeed.all.map { it.section }.distinct().sorted() }
+    val allFloors = remember { TenantSeed.all.map { it.floorOrType }.filter { it.isNotBlank() }.distinct().sorted() }
+    val allActivities = remember { TenantSeed.all.map { it.activity }.filter { it.isNotBlank() }.distinct().sorted() }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Арендаторы — Континент") },
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+            ) {
+                Text("Арендаторы — Континент")
+                Button(
+                    onClick = { showFiltersDialog = true },
+                    modifier = Modifier.size(height = 36.dp, width = 80.dp)
+                ) {
+                    Text("Фильтры${if (filters.countActive() > 0) " (${filters.countActive()})" else ""}")
+                }
+            }
+        },
         text = {
             Column {
                 OutlinedTextField(
@@ -1197,8 +1471,109 @@ private fun TenantListDialog(
                     singleLine = true
                 )
                 Spacer(modifier = Modifier.height(8.dp))
+
+                if (filters.countActive() > 0) {
+                    LazyRow(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        if (filters.sections.isNotEmpty()) {
+                            items(filters.sections.sorted()) { section ->
+                                Card(
+                                    modifier = Modifier
+                                        .border(1.dp, MaterialTheme.colorScheme.primary)
+                                        .padding(4.dp)
+                                ) {
+                                    Text(
+                                        section,
+                                        modifier = Modifier.padding(6.dp),
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                }
+                            }
+                        }
+                        if (filters.floors.isNotEmpty()) {
+                            items(filters.floors.sorted()) { floor ->
+                                Card(
+                                    modifier = Modifier
+                                        .border(1.dp, MaterialTheme.colorScheme.secondary)
+                                        .padding(4.dp)
+                                ) {
+                                    Text(
+                                        "Эт: $floor",
+                                        modifier = Modifier.padding(6.dp),
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                }
+                            }
+                        }
+                        if (filters.activities.isNotEmpty()) {
+                            items(filters.activities.sorted()) { activity ->
+                                Card(
+                                    modifier = Modifier
+                                        .border(1.dp, MaterialTheme.colorScheme.tertiary)
+                                        .padding(4.dp)
+                                ) {
+                                    Text(
+                                        activity.take(20),
+                                        modifier = Modifier.padding(6.dp),
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                }
+                            }
+                        }
+                        if (filters.hasPhone) {
+                            item {
+                                Card(
+                                    modifier = Modifier
+                                        .border(1.dp, MaterialTheme.colorScheme.onBackground)
+                                        .padding(4.dp)
+                                ) {
+                                    Text(
+                                        "Телефон",
+                                        modifier = Modifier.padding(6.dp),
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                }
+                            }
+                        }
+                        if (filters.hasEmail) {
+                            item {
+                                Card(
+                                    modifier = Modifier
+                                        .border(1.dp, MaterialTheme.colorScheme.onBackground)
+                                        .padding(4.dp)
+                                ) {
+                                    Text(
+                                        "Email",
+                                        modifier = Modifier.padding(6.dp),
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                }
+                            }
+                        }
+                        if (filters.hasAddress) {
+                            item {
+                                Card(
+                                    modifier = Modifier
+                                        .border(1.dp, MaterialTheme.colorScheme.onBackground)
+                                        .padding(4.dp)
+                                ) {
+                                    Text(
+                                        "Адрес",
+                                        modifier = Modifier.padding(6.dp),
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
                 LazyColumn(
-                    modifier = Modifier.heightIn(max = 480.dp),
+                    modifier = Modifier.heightIn(max = 400.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     if (tenants.isEmpty()) {
@@ -1235,6 +1610,17 @@ private fun TenantListDialog(
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Закрыть") } }
     )
+
+    if (showFiltersDialog) {
+        TenantsFilterDialog(
+            filters = filters,
+            allSections = allSections,
+            allFloors = allFloors,
+            allActivities = allActivities,
+            onFiltersChanged = { filters = it },
+            onDismiss = { showFiltersDialog = false }
+        )
+    }
 
     selectedTenant?.let { tenant ->
         val context = LocalContext.current
