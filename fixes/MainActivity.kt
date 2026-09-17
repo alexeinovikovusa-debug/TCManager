@@ -1037,11 +1037,23 @@ private fun tenantMatchesSearch(tenant: TenantRecord, searchText: String): Boole
 private fun TenantsFilterDialog(
     filters: TenantFilters,
     allSections: List<String>,
+    sectionsByFloor: Map<String, Set<String>>,
     allFloors: List<String>,
     allActivities: List<String>,
     onFiltersChanged: (TenantFilters) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val availableSections = if (filters.floors.isEmpty()) {
+        allSections
+    } else {
+        sectionsByFloor
+            .filterKeys { it in filters.floors }
+            .values
+            .flatten()
+            .distinct()
+            .sorted()
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Фильтры") },
@@ -1052,13 +1064,13 @@ private fun TenantsFilterDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                if (allSections.isNotEmpty()) {
+                if (availableSections.isNotEmpty()) {
                     Text("Секция", style = MaterialTheme.typography.titleSmall)
                     LazyRow(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        items(allSections) { section ->
+                        items(availableSections) { section ->
                             Button(
                                 onClick = {
                                     val newSections = filters.sections.toMutableSet()
@@ -1099,7 +1111,21 @@ private fun TenantsFilterDialog(
                                         } else {
                                             newFloors.add(floor)
                                         }
-                                        onFiltersChanged(filters.copy(floors = newFloors))
+                                        val availableSectionsForFloors = if (newFloors.isEmpty()) {
+                                            allSections.toSet()
+                                        } else {
+                                            sectionsByFloor
+                                                .filterKeys { it in newFloors }
+                                                .values
+                                                .flatten()
+                                                .toSet()
+                                        }
+                                        onFiltersChanged(
+                                            filters.copy(
+                                                floors = newFloors,
+                                                sections = filters.sections.intersect(availableSectionsForFloors)
+                                            )
+                                        )
                                     }
                                     .padding(8.dp),
                                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
@@ -1412,6 +1438,11 @@ private fun TenantListDialog(
     }
 
     val allSections = remember { TenantSeed.all.map { it.section }.distinct().sorted() }
+    val sectionsByFloor = remember {
+        TenantSeed.all
+            .groupBy { it.floorOrType }
+            .mapValues { (_, tenants) -> tenants.map { it.section }.toSet() }
+    }
     val allFloors = remember { TenantSeed.all.map { it.floorOrType }.filter { it.isNotBlank() }.distinct().sorted() }
     val allActivities = remember { TenantSeed.all.map { it.activity }.filter { it.isNotBlank() }.distinct().sorted() }
 
@@ -1589,6 +1620,7 @@ private fun TenantListDialog(
         TenantsFilterDialog(
             filters = filters,
             allSections = allSections,
+            sectionsByFloor = sectionsByFloor,
             allFloors = allFloors,
             allActivities = allActivities,
             onFiltersChanged = { filters = it },
