@@ -74,9 +74,11 @@ interface InspectionActAttachmentDao {
         ProjectFile::class,
         Inspection::class,
         InspectionAct::class,
-        InspectionActAttachment::class
+        InspectionActAttachment::class,
+        ImportedTenant::class,
+        TenantImportBackup::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -84,6 +86,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun complexDao(): ComplexDao
     abstract fun inspectionDao(): InspectionDao
     abstract fun inspectionActAttachmentDao(): InspectionActAttachmentDao
+    abstract fun tenantImportDao(): TenantImportDao
 
     companion object {
         @Volatile
@@ -96,7 +99,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "tc_manager.db"
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .build()
                     .also {
                         INSTANCE = it
@@ -116,6 +119,22 @@ abstract class AppDatabase : RoomDatabase() {
                     )
                     """.trimIndent()
                 )
+            }
+
+        }
+
+        private val MIGRATION_2_3 = object : androidx.room.migration.Migration(2, 3) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("""CREATE TABLE IF NOT EXISTS imported_tenants (
+                    section TEXT NOT NULL, tenant TEXT NOT NULL, floorOrType TEXT NOT NULL,
+                    leaseEnd TEXT NOT NULL, brand TEXT NOT NULL, activity TEXT NOT NULL,
+                    phone TEXT NOT NULL, email TEXT NOT NULL, address TEXT NOT NULL,
+                    PRIMARY KEY(section))""")
+                db.execSQL("""CREATE TABLE IF NOT EXISTS tenant_import_backups (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, backedUpAt INTEGER NOT NULL,
+                    section TEXT NOT NULL, tenant TEXT NOT NULL, floorOrType TEXT NOT NULL,
+                    leaseEnd TEXT NOT NULL, brand TEXT NOT NULL, activity TEXT NOT NULL,
+                    phone TEXT NOT NULL, email TEXT NOT NULL, address TEXT NOT NULL)""")
             }
         }
     }

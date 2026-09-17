@@ -75,11 +75,17 @@ import com.example.tcmanager.data.AppDatabase
 import com.example.tcmanager.data.Complex
 import com.example.tcmanager.data.TenantRecord
 import com.example.tcmanager.data.TenantSeed
+import com.example.tcmanager.data.ImportedTenant
 import com.example.tcmanager.data.InspectionActAttachment
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.util.zip.ZipInputStream
+import android.util.Xml
+import org.xmlpull.v1.XmlPullParser
+import java.io.ByteArrayInputStream
 
 private data class InspectionSchedule(
     val date: String,
@@ -1425,6 +1431,123 @@ private fun TimeSettingsDialog(
     )
 }
 
+private data class TenantImportPreview(val rows: List<TenantRecord>, val total: Int)
+
+private fun normalizeHeader(value: String): String =
+    value.lowercase(Locale("ru")).replace("ё", "е").replace(Regex("[^а-яa-z0-9]"), "")
+
+private fun parseTenantXlsx(context: Context, uri: Uri): TenantImportPreview {
+    val entries = mutableMapOf<String, ByteArray>()
+    context.contentResolver.openInputStream(uri)?.use { input ->
+        ZipInputStream(input).use { zip ->
+            var entry = zip.nextEntry
+            while (entry != null) {
+                if (!entry.isDirectory) entries[entry.name] = zip.readBytes()
+                entry = zip.nextEntry
+            }
+        }
+    } ?: error("Не удалось открыть файл")
+    val shared = mutableListOf<String>()
+    entries["xl/sharedStrings.xml"]?.let { bytes ->
+        val parser = Xml.newPullParser().apply { setInput(ByteArrayInputStream(bytes), "UTF-8") }
+        var text = ""
+        while (parser.next() != XmlPullParser.END_DOCUMENT) {
+            if (parser.eventType == XmlPullParser.TEXT) text += parser.text
+            if (parser.eventType == XmlPullParser.END_TAG && parser.name == "si") {
+                shared += text.trim(); text = ""
+            }
+        }
+    }
+    val sheet = entries["xl/worksheets/sheet1.xml"] ?: error("В XLSX не найден первый лист")
+    val rows = mutableListOf<List<String>>()
+    val parser = Xml.newPullParser().apply { setInput(ByteArrayInputStream(sheet), "UTF-8") }
+    var current = mutableMapOf<Int, String>()
+    var rowNumber = 0
+    var cellIndex = 0
+    var cellType = ""
+    var value = ""
+    var inValue = false
+    fun columnNumber(ref: String): Int {
+        val letters = ref.takeWhile { it.isLetter() }
+        return letters.fold(0) { n, c -> n * 26 + (c.uppercaseChar().code - 'A'.code + 1) }
+    }
+    while (parser.next() != XmlPullParser.END_DOCUMENT) {
+        when (parser.eventType) {
+            XmlPullParser.START_TAG -> when (parser.name) {
+                "row" -> { current = mutableMapOf(); rowNumber++ }
+                "c" -> {
+                    cellIndex = columnNumber(parser.getAttributeValue(null, "r") ?: "A$rowNumber")
+                    cellType = parser.getAttributeValue(null, "t") ?: ""
+                    value = ""; inValue = false
+                }
+                "v", "t" -> if (cellType != "inlineStr" || parser.name == "t") inValue = true
+            }
+            XmlPullParser.TEXT -> if (inValue) value += parser.text
+            XmlPullParser.END_TAG -> when (parser.name) {
+                "v", "t" -> inValue = false
+                "c" -> {
+                    val resolved = if (cellType == "s") shared.getOrNull(value.trim().toIntOrNull() ?: -1).orEmpty() else value
+                    current[cellIndex] = resolved.trim()
+                }
+                "row" -> if (current.isNotEmpty()) {
+                    val max = current.keys.maxOrNull() ?: 0
+                    rows += (1..max).map { current[it].orEmpty() }
+                }
+            }
+        }
+    }
+    if (rows.isEmpty()) error("Лист XLSX пуст")
+    val aliases = mapOf(
+        "section" to setOf("секция", "секцияпомещение", "помещение", "section", "номерпомещения", "номерсекции", "секцияномер"),
+        "floor" to setOf("этаж", "этажтип", "этажтиппомещения", "этажтиппомещения", "floor"),
+        "lease" to setOf("окончаниедоговора", "срокдоговора", "датаокончания", "датаокончаниядоговора", "leaseend", "дата"),
+        "tenant" to setOf("арендатор", "наименованиеарендатора", "наименование", "tenant", "контрагент"),
+        "brand" to setOf("бренд", "торговаямарка", "торговыйбренд", "brand"),
+        "activity" to setOf("виддеятельности", "виддеятельностиарендатора", "деятельность", "activity"),
+        "phone" to setOf("телефон", "телефоны", "phone"),
+        "email" to setOf("email", "электроннаяпочта", "почта"),
+        "address" to setOf("адрес", "address")
+    )
+    val headers = rows.first().map { normalizeHeader(it) }
+    val columns = aliases.mapValues { (_, names) -> headers.indexOfFirst { it in names } }
+    if (columns["section"] ?: -1 < 0 || columns["tenant"] ?: -1 < 0)
+        error("Не найдены обязательные заголовки «Секция» и «Арендатор»")
+    fun value(row: List<String>, key: String) = row.getOrNull(columns[key] ?: -1).orEmpty().trim()
+    val records = rows.drop(1).mapNotNull { row ->
+        val section = value(row, "section")
+        val tenant = value(row, "tenant")
+        if (section.isBlank() || tenant.isBlank()) null
+        else TenantRecord(section, value(row, "floor"), value(row, "lease"), tenant, value(row, "brand"), value(row, "activity"), value(row, "phone"), value(row, "email"), value(row, "address"))
+    }.distinctBy { it.section to it.tenant }
+    if (records.isEmpty()) error("В XLSX нет строк арендаторов")
+    return TenantImportPreview(records, records.size)
+}
+
+private data class TenantMergeSummary(val added: Int, val updated: Int, val skipped: Int)
+
+private suspend fun mergeTenantImport(db: AppDatabase, rows: List<TenantRecord>): TenantMergeSummary {
+    val dao = db.tenantImportDao()
+    val existing = dao.all().associateBy { it.section }
+    val current = if (existing.isEmpty()) TenantSeed.all.map { ImportedTenant.from(it) } else existing.values.toList()
+    dao.backup(current.map {
+        com.example.tcmanager.data.TenantImportBackup(
+            backedUpAt = System.currentTimeMillis(), section = it.section, tenant = it.tenant,
+            floorOrType = it.floorOrType, leaseEnd = it.leaseEnd, brand = it.brand,
+            activity = it.activity, phone = it.phone, email = it.email, address = it.address
+        )
+    })
+    var added = 0; var updated = 0; var skipped = 0
+    rows.forEach { record ->
+        val old = existing[record.section]
+        when {
+            old == null -> { added++; dao.upsert(ImportedTenant.from(record)) }
+            old.record() == record -> skipped++
+            else -> { updated++; dao.upsert(ImportedTenant.from(record)) }
+        }
+    }
+    return TenantMergeSummary(added, updated, skipped)
+}
+
 @Composable
 fun TenantsScreen(
     list: List<Complex>,
@@ -1541,6 +1664,21 @@ private fun TenantListDialog(
     initialSearchText: String = "",
     onDismiss: () -> Unit
 ) {
+    val context = LocalContext.current
+    val db = remember { AppDatabase.get(context) }
+    val imported by db.tenantImportDao().observe().collectAsState(initial = emptyList())
+    val tenants = remember(imported) { if (imported.isEmpty()) TenantSeed.all else imported.map { it.record() } }
+    var importPreview by remember { mutableStateOf<TenantImportPreview?>(null) }
+    var importError by remember { mutableStateOf<String?>(null) }
+    var importSummary by remember { mutableStateOf<TenantMergeSummary?>(null) }
+    val openXlsx = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+            runCatching { parseTenantXlsx(context, uri) }
+                .onSuccess { preview -> withContext(Dispatchers.Main) { importPreview = preview } }
+                .onFailure { error -> withContext(Dispatchers.Main) { importError = error.message ?: "Ошибка разбора XLSX" } }
+        }
+    }
     var searchText by remember(initialSearchText) {
         mutableStateOf(initialSearchText)
     }
@@ -1548,20 +1686,20 @@ private fun TenantListDialog(
     var filters by remember { mutableStateOf(TenantFilters()) }
     var showFiltersDialog by remember { mutableStateOf(false) }
 
-    val displayedTenants = TenantSeed.all
+    val displayedTenants = tenants
         .filter { tenant -> tenantMatchesFilters(tenant, filters) }
         .filter { tenant ->
             searchText.isBlank() || tenantMatchesSearch(tenant, searchText)
         }
 
-    val allSections = remember { TenantSeed.all.map { it.section }.distinct().sorted() }
-    val sectionsByFloor = remember {
-        TenantSeed.all
+    val allSections = remember(tenants) { tenants.map { it.section }.distinct().sorted() }
+    val sectionsByFloor = remember(tenants) {
+        tenants
             .groupBy { it.floorOrType }
             .mapValues { (_, tenants) -> tenants.map { it.section }.toSet() }
     }
-    val allFloors = remember { TenantSeed.all.map { it.floorOrType }.filter { it.isNotBlank() }.distinct().sorted() }
-    val allActivities = remember { TenantSeed.all.map { it.activity }.filter { it.isNotBlank() }.distinct().sorted() }
+    val allFloors = remember(tenants) { tenants.map { it.floorOrType }.filter { it.isNotBlank() }.distinct().sorted() }
+    val allActivities = remember(tenants) { tenants.map { it.activity }.filter { it.isNotBlank() }.distinct().sorted() }
     val leaseStatusFilters = remember { LeaseStatusFilter.values().toList() }
 
     AlertDialog(
@@ -1582,6 +1720,10 @@ private fun TenantListDialog(
                 ) {
                     Text("Фильтры${if (filters.countActive() > 0) " (${filters.countActive()})" else ""}")
                 }
+                Button(
+                    onClick = { openXlsx.launch(arrayOf("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")) },
+                    modifier = Modifier.height(36.dp)
+                ) { Text("Импорт XLSX") }
             }
         },
         text = {
@@ -1867,6 +2009,45 @@ private fun TenantListDialog(
             confirmButton = {
                 TextButton(onClick = { selectedTenant = null }) { Text("Закрыть") }
             }
+        )
+    }
+    importError?.let { message ->
+        AlertDialog(
+            onDismissRequest = { importError = null },
+            title = { Text("Ошибка импорта") },
+            text = { Text(message) },
+            confirmButton = { TextButton(onClick = { importError = null }) { Text("OK") } }
+        )
+    }
+    importPreview?.let { preview ->
+        AlertDialog(
+            onDismissRequest = { importPreview = null },
+            title = { Text("Предпросмотр XLSX") },
+            text = {
+                Column {
+                    Text("Найдено записей: ${preview.total}")
+                    preview.rows.take(5).forEach { row -> Text("${row.section} — ${row.tenant}", style = MaterialTheme.typography.bodySmall) }
+                }
+            },
+            dismissButton = { TextButton(onClick = { importPreview = null }) { Text("Отмена") } },
+            confirmButton = {
+                TextButton(onClick = {
+                    val rows = preview.rows
+                    importPreview = null
+                    kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+                        val result = mergeTenantImport(db, rows)
+                        withContext(Dispatchers.Main) { importSummary = result }
+                    }
+                }) { Text("Применить") }
+            }
+        )
+    }
+    importSummary?.let { summary ->
+        AlertDialog(
+            onDismissRequest = { importSummary = null },
+            title = { Text("Импорт завершён") },
+            text = { Text("Добавлено: ${summary.added}\nОбновлено: ${summary.updated}\nПропущено: ${summary.skipped}") },
+            confirmButton = { TextButton(onClick = { importSummary = null }) { Text("OK") } }
         )
     }
 }
