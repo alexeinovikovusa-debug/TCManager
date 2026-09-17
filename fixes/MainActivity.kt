@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.aspectRatio
@@ -1068,12 +1069,13 @@ private fun TenantsFilterDialog(
                                     }
                                     onFiltersChanged(filters.copy(sections = newSections))
                                 },
-                                modifier = Modifier.size(height = 32.dp, width = 60.dp)
+                                modifier = Modifier
+                                    .widthIn(min = 64.dp)
+                                    .heightIn(min = 32.dp)
                             ) {
                                 Text(
                                     if (section in filters.sections) "✓ $section" else section,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    maxLines = 1
+                                    style = MaterialTheme.typography.labelSmall
                                 )
                             }
                         }
