@@ -5,7 +5,7 @@ import kotlinx.coroutines.flow.Flow
 
 data class TenantRecord(val section: String, val floorOrType: String, val leaseEnd: String, val tenant: String, val brand: String, val activity: String, val phone: String, val email: String, val address: String)
 
-@Entity(tableName = "imported_tenants", primaryKeys = ["section", "tenant"])
+@Entity(tableName = "imported_tenants", primaryKeys = ["section"])
 data class ImportedTenant(
     val section: String,
     val tenant: String,
@@ -46,8 +46,8 @@ interface TenantImportDao {
     @Query("SELECT * FROM imported_tenants")
     suspend fun all(): List<ImportedTenant>
 
-    @Query("SELECT * FROM imported_tenants WHERE section = :section AND tenant = :tenant LIMIT 1")
-    suspend fun find(section: String, tenant: String): ImportedTenant?
+    @Query("SELECT * FROM imported_tenants WHERE section = :section LIMIT 1")
+    suspend fun find(section: String): ImportedTenant?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(row: ImportedTenant)

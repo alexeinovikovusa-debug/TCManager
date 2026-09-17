@@ -1527,7 +1527,7 @@ private data class TenantMergeSummary(val added: Int, val updated: Int, val skip
 
 private suspend fun mergeTenantImport(db: AppDatabase, rows: List<TenantRecord>): TenantMergeSummary {
     val dao = db.tenantImportDao()
-    val existing = dao.all().associateBy { it.section to it.tenant }
+    val existing = dao.all().associateBy { it.section }
     val current = if (existing.isEmpty()) TenantSeed.all.map { ImportedTenant.from(it) } else existing.values.toList()
     dao.backup(current.map {
         com.example.tcmanager.data.TenantImportBackup(
@@ -1538,7 +1538,7 @@ private suspend fun mergeTenantImport(db: AppDatabase, rows: List<TenantRecord>)
     })
     var added = 0; var updated = 0; var skipped = 0
     rows.forEach { record ->
-        val old = existing[record.section to record.tenant]
+        val old = existing[record.section]
         when {
             old == null -> { added++; dao.upsert(ImportedTenant.from(record)) }
             old.record() == record -> skipped++
@@ -1723,7 +1723,7 @@ private fun TenantListDialog(
                 Button(
                     onClick = { openXlsx.launch(arrayOf("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")) },
                     modifier = Modifier.height(36.dp)
-                ) { Text("Import XLSX") }
+                ) { Text("Импорт XLSX") }
             }
         },
         text = {
