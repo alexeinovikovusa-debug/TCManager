@@ -58,6 +58,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import android.net.Uri
 import java.time.LocalDate
@@ -1705,29 +1706,52 @@ private fun TenantListDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Row(
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(
                     "Арендаторы — Континент",
-                    modifier = Modifier.weight(1f)
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.headlineSmall
                 )
-                Button(
-                    onClick = { showFiltersDialog = true },
-                    modifier = Modifier.height(36.dp)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text("Фильтры${if (filters.countActive() > 0) " (${filters.countActive()})" else ""}")
+                    Button(
+                        onClick = { showFiltersDialog = true },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            "Фильтры${if (filters.countActive() > 0) " (${filters.countActive()})" else ""}",
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Button(
+                        onClick = {
+                            openXlsx.launch(
+                                arrayOf(
+                                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                                )
+                            )
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Импорт XLSX", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
                 }
-                Button(
-                    onClick = { openXlsx.launch(arrayOf("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")) },
-                    modifier = Modifier.height(36.dp)
-                ) { Text("Импорт XLSX") }
             }
         },
         text = {
-            Column {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 520.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
                 OutlinedTextField(
                     value = searchText,
                     onValueChange = { searchText = it },
@@ -1862,23 +1886,20 @@ private fun TenantListDialog(
                     }
                 }
 
-                LazyColumn(
-                    modifier = Modifier.heightIn(max = 400.dp),
+                Column(
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     if (displayedTenants.isEmpty()) {
-                        item {
-                            Text(
-                                if (filters.leaseStatusFilter == LeaseStatusFilter.ALL) {
-                                    "Ничего не найдено"
-                                } else {
-                                    "Нет арендаторов для статуса «${filters.leaseStatusFilter.label}» " +
-                                        "с выбранными дополнительными фильтрами"
-                                }
-                            )
-                        }
+                        Text(
+                            if (filters.leaseStatusFilter == LeaseStatusFilter.ALL) {
+                                "Ничего не найдено"
+                            } else {
+                                "Нет арендаторов для статуса «${filters.leaseStatusFilter.label}» " +
+                                    "с выбранными дополнительными фильтрами"
+                            }
+                        )
                     } else {
-                        items(displayedTenants, key = { it.section + it.tenant }) { tenant ->
+                        displayedTenants.forEach { tenant ->
                             val status = leaseStatus(tenant.leaseEnd)
                             val statusColor = leaseStatusColor(status)
                             Card(
