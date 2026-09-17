@@ -1469,7 +1469,7 @@ private fun parseTenantXlsx(context: Context, uri: Uri): TenantImportPreview {
     var inValue = false
     fun columnNumber(ref: String): Int {
         val letters = ref.takeWhile { it.isLetter() }
-        return letters.fold(0) { n, c -> n * 26 + c.uppercaseChar() - 'A' + 1 }
+        return letters.fold(0) { n, c -> n * 26 + (c.uppercaseChar().code - 'A'.code + 1) }
     }
     while (parser.next() != XmlPullParser.END_DOCUMENT) {
         when (parser.eventType) {

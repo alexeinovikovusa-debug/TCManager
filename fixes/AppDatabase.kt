@@ -121,19 +121,20 @@ abstract class AppDatabase : RoomDatabase() {
                 )
             }
 
-            private val MIGRATION_2_3 = object : androidx.room.migration.Migration(2, 3) {
-                override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
-                    db.execSQL("""CREATE TABLE IF NOT EXISTS imported_tenants (
-                        section TEXT NOT NULL, tenant TEXT NOT NULL, floorOrType TEXT NOT NULL,
-                        leaseEnd TEXT NOT NULL, brand TEXT NOT NULL, activity TEXT NOT NULL,
-                        phone TEXT NOT NULL, email TEXT NOT NULL, address TEXT NOT NULL,
-                        PRIMARY KEY(section, tenant))""")
-                    db.execSQL("""CREATE TABLE IF NOT EXISTS tenant_import_backups (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, backedUpAt INTEGER NOT NULL,
-                        section TEXT NOT NULL, tenant TEXT NOT NULL, floorOrType TEXT NOT NULL,
-                        leaseEnd TEXT NOT NULL, brand TEXT NOT NULL, activity TEXT NOT NULL,
-                        phone TEXT NOT NULL, email TEXT NOT NULL, address TEXT NOT NULL)""")
-                }
+        }
+
+        private val MIGRATION_2_3 = object : androidx.room.migration.Migration(2, 3) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("""CREATE TABLE IF NOT EXISTS imported_tenants (
+                    section TEXT NOT NULL, tenant TEXT NOT NULL, floorOrType TEXT NOT NULL,
+                    leaseEnd TEXT NOT NULL, brand TEXT NOT NULL, activity TEXT NOT NULL,
+                    phone TEXT NOT NULL, email TEXT NOT NULL, address TEXT NOT NULL,
+                    PRIMARY KEY(section))""")
+                db.execSQL("""CREATE TABLE IF NOT EXISTS tenant_import_backups (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, backedUpAt INTEGER NOT NULL,
+                    section TEXT NOT NULL, tenant TEXT NOT NULL, floorOrType TEXT NOT NULL,
+                    leaseEnd TEXT NOT NULL, brand TEXT NOT NULL, activity TEXT NOT NULL,
+                    phone TEXT NOT NULL, email TEXT NOT NULL, address TEXT NOT NULL)""")
             }
         }
     }
