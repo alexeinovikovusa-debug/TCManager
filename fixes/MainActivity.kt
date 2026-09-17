@@ -1459,6 +1459,7 @@ private fun importedSectionAndType(value: String): Pair<String, String> {
         upper == "СТ-8" -> "4 этаж, помещение РТС"
         upper == "П4" -> "4 этаж, автомойка, паркинг"
         upper == "П-1" -> "1 этаж, авторемонт, паркинг"
+        upper == "О" -> "4 этаж, офис"
         upper.startsWith("СТ-") -> "помещение РТС"
         upper.startsWith("ЦБ") || upper.contains("ЦБ") -> "банкомат"
         upper.startsWith("Ц") || afterSlash.contains("Ц", ignoreCase = true) -> "цоколь"
