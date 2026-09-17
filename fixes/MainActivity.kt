@@ -63,6 +63,8 @@ import android.net.Uri
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
+import java.time.format.DateTimeParseException
+import java.time.temporal.ChronoUnit
 import java.util.Locale
 import java.util.Calendar
 import androidx.lifecycle.ViewModel
@@ -1033,6 +1035,77 @@ private fun tenantMatchesSearch(tenant: TenantRecord, searchText: String): Boole
     }
 }
 
+private enum class LeaseStatus {
+    EXPIRING_30,
+    EXPIRING_60,
+    EXPIRING_90,
+    EXPIRED,
+    NOT_SOON,
+    UNKNOWN
+}
+
+private enum class LeaseStatusFilter(val label: String) {
+    ALL("Все"),
+    SOON("Скоро"),
+    EXPIRED("Просрочено"),
+    NOT_SOON("Не скоро")
+}
+
+private val LEASE_DATE_FORMATTER = DateTimeFormatter.ofPattern("dd.MM.yyyy")
+
+private fun leaseStatus(
+    leaseEnd: String,
+    today: LocalDate = LocalDate.now()
+): LeaseStatus {
+    val endDate = try {
+        LocalDate.parse(leaseEnd.trim(), LEASE_DATE_FORMATTER)
+    } catch (_: DateTimeParseException) {
+        return LeaseStatus.UNKNOWN
+    }
+    val daysUntilEnd = ChronoUnit.DAYS.between(today, endDate)
+    return when {
+        daysUntilEnd < 0 -> LeaseStatus.EXPIRED
+        daysUntilEnd <= 30 -> LeaseStatus.EXPIRING_30
+        daysUntilEnd <= 60 -> LeaseStatus.EXPIRING_60
+        daysUntilEnd <= 90 -> LeaseStatus.EXPIRING_90
+        else -> LeaseStatus.NOT_SOON
+    }
+}
+
+private fun leaseStatusColor(status: LeaseStatus): Color =
+    when (status) {
+        LeaseStatus.EXPIRING_30, LeaseStatus.EXPIRED -> Color(0xFFD32F2F)
+        LeaseStatus.EXPIRING_60 -> Color(0xFFEF6C00)
+        LeaseStatus.EXPIRING_90 -> Color(0xFFF9A825)
+        LeaseStatus.NOT_SOON, LeaseStatus.UNKNOWN -> Color.Transparent
+    }
+
+private fun leaseStatusLabel(status: LeaseStatus): String =
+    when (status) {
+        LeaseStatus.EXPIRING_30 -> "Истекает ≤ 30 дней"
+        LeaseStatus.EXPIRING_60 -> "Истекает ≤ 60 дней"
+        LeaseStatus.EXPIRING_90 -> "Истекает ≤ 90 дней"
+        LeaseStatus.EXPIRED -> "Просрочен"
+        LeaseStatus.NOT_SOON -> "Не скоро"
+        LeaseStatus.UNKNOWN -> "Дата не указана"
+    }
+
+private fun leaseStatusMatchesFilter(
+    tenant: TenantRecord,
+    filter: LeaseStatusFilter
+): Boolean {
+    val status = leaseStatus(tenant.leaseEnd)
+    return when (filter) {
+        LeaseStatusFilter.ALL -> true
+        LeaseStatusFilter.SOON -> status == LeaseStatus.EXPIRING_30 ||
+            status == LeaseStatus.EXPIRING_60 ||
+            status == LeaseStatus.EXPIRING_90
+        LeaseStatusFilter.EXPIRED -> status == LeaseStatus.EXPIRED
+        LeaseStatusFilter.NOT_SOON -> status == LeaseStatus.NOT_SOON ||
+            status == LeaseStatus.UNKNOWN
+    }
+}
+
 @Composable
 private fun TenantsFilterDialog(
     filters: TenantFilters,
@@ -1040,6 +1113,7 @@ private fun TenantsFilterDialog(
     sectionsByFloor: Map<String, Set<String>>,
     allFloors: List<String>,
     allActivities: List<String>,
+    leaseStatusFilters: List<LeaseStatusFilter>,
     onFiltersChanged: (TenantFilters) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -1064,6 +1138,34 @@ private fun TenantsFilterDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                Text("Срок договора", style = MaterialTheme.typography.titleSmall)
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    items(leaseStatusFilters) { statusFilter ->
+                        Button(
+                            onClick = {
+                                onFiltersChanged(
+                                    filters.copy(leaseStatusFilter = statusFilter)
+                                )
+                            },
+                            modifier = Modifier
+                                .widthIn(min = 64.dp)
+                                .heightIn(min = 32.dp)
+                        ) {
+                            Text(
+                                if (filters.leaseStatusFilter == statusFilter) {
+                                    "✓ ${statusFilter.label}"
+                                } else {
+                                    statusFilter.label
+                                },
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
+                    }
+                }
+
                 if (availableSections.isNotEmpty()) {
                     Text("Секция", style = MaterialTheme.typography.titleSmall)
                     LazyRow(
@@ -1389,16 +1491,19 @@ private data class TenantFilters(
     val sections: Set<String> = emptySet(),
     val floors: Set<String> = emptySet(),
     val activities: Set<String> = emptySet(),
+    val leaseStatusFilter: LeaseStatusFilter = LeaseStatusFilter.ALL,
     val hasPhone: Boolean = false,
     val hasEmail: Boolean = false,
     val hasAddress: Boolean = false
 ) {
     fun isEmpty(): Boolean =
         sections.isEmpty() && floors.isEmpty() && activities.isEmpty() &&
+        leaseStatusFilter == LeaseStatusFilter.ALL &&
         !hasPhone && !hasEmail && !hasAddress
 
     fun countActive(): Int =
         sections.size + floors.size + activities.size +
+        (if (leaseStatusFilter != LeaseStatusFilter.ALL) 1 else 0) +
         (if (hasPhone) 1 else 0) + (if (hasEmail) 1 else 0) + (if (hasAddress) 1 else 0)
 }
 
@@ -1408,6 +1513,7 @@ private fun tenantMatchesFilters(tenant: TenantRecord, filters: TenantFilters): 
     if (filters.sections.isNotEmpty() && tenant.section !in filters.sections) return false
     if (filters.floors.isNotEmpty() && tenant.floorOrType !in filters.floors) return false
     if (filters.activities.isNotEmpty() && tenant.activity !in filters.activities) return false
+    if (!leaseStatusMatchesFilter(tenant, filters.leaseStatusFilter)) return false
     if (filters.hasPhone && tenant.phone.isBlank()) return false
     if (filters.hasEmail && tenant.email.isBlank()) return false
     if (filters.hasAddress && tenant.address.isBlank()) return false
@@ -1445,6 +1551,7 @@ private fun TenantListDialog(
     }
     val allFloors = remember { TenantSeed.all.map { it.floorOrType }.filter { it.isNotBlank() }.distinct().sorted() }
     val allActivities = remember { TenantSeed.all.map { it.activity }.filter { it.isNotBlank() }.distinct().sorted() }
+    val leaseStatusFilters = remember { LeaseStatusFilter.values().toList() }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1529,6 +1636,31 @@ private fun TenantListDialog(
                                 }
                             }
                         }
+                        if (filters.leaseStatusFilter != LeaseStatusFilter.ALL) {
+                            item {
+                                Card(
+                                    modifier = Modifier
+                                        .border(
+                                            1.dp,
+                                            leaseStatusColor(
+                                                when (filters.leaseStatusFilter) {
+                                                    LeaseStatusFilter.SOON -> LeaseStatus.EXPIRING_90
+                                                    LeaseStatusFilter.EXPIRED -> LeaseStatus.EXPIRED
+                                                    LeaseStatusFilter.NOT_SOON -> LeaseStatus.NOT_SOON
+                                                    LeaseStatusFilter.ALL -> LeaseStatus.UNKNOWN
+                                                }
+                                            )
+                                        )
+                                        .padding(4.dp)
+                                ) {
+                                    Text(
+                                        filters.leaseStatusFilter.label,
+                                        modifier = Modifier.padding(6.dp),
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                }
+                            }
+                        }
                         if (filters.hasPhone) {
                             item {
                                 Card(
@@ -1587,9 +1719,20 @@ private fun TenantListDialog(
                         }
                     } else {
                         items(tenants, key = { it.section + it.tenant }) { tenant ->
+                            val status = leaseStatus(tenant.leaseEnd)
+                            val statusColor = leaseStatusColor(status)
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .then(
+                                        if (statusColor != Color.Transparent) {
+                                            Modifier
+                                                .background(statusColor.copy(alpha = 0.10f))
+                                                .border(1.dp, statusColor.copy(alpha = 0.65f))
+                                        } else {
+                                            Modifier
+                                        }
+                                    )
                                     .clickable { selectedTenant = tenant }
                             ) {
                                 Column(modifier = Modifier.padding(10.dp)) {
@@ -1604,6 +1747,28 @@ private fun TenantListDialog(
                                                 .filter { it.isNotBlank() }
                                                 .joinToString(" • "),
                                             style = MaterialTheme.typography.bodySmall
+                                        )
+                                    }
+                                    if (tenant.leaseEnd.isNotBlank()) {
+                                        Text(
+                                            "${tenant.leaseEnd} • ${leaseStatusLabel(status)}",
+                                            modifier = Modifier
+                                                .padding(top = 4.dp)
+                                                .then(
+                                                    if (statusColor != Color.Transparent) {
+                                                        Modifier
+                                                            .background(statusColor.copy(alpha = 0.18f))
+                                                            .padding(horizontal = 6.dp, vertical = 3.dp)
+                                                    } else {
+                                                        Modifier
+                                                    }
+                                                ),
+                                            color = if (statusColor != Color.Transparent) {
+                                                statusColor
+                                            } else {
+                                                Color.Unspecified
+                                            },
+                                            style = MaterialTheme.typography.labelMedium
                                         )
                                     }
                                 }
@@ -1623,6 +1788,7 @@ private fun TenantListDialog(
             sectionsByFloor = sectionsByFloor,
             allFloors = allFloors,
             allActivities = allActivities,
+            leaseStatusFilters = leaseStatusFilters,
             onFiltersChanged = { filters = it },
             onDismiss = { showFiltersDialog = false }
         )
@@ -1645,7 +1811,7 @@ private fun TenantListDialog(
                 ) {
                     TenantDetailField("Секция", tenant.section)
                     TenantDetailField("Этаж/тип помещения", tenant.floorOrType)
-                    TenantDetailField("Дата окончания", tenant.leaseEnd)
+                    TenantLeaseEndField(tenant)
                     TenantDetailField("Бренд", tenant.brand)
                     TenantDetailField("Вид деятельности", tenant.activity)
                     TenantPhoneFields(
@@ -1755,6 +1921,30 @@ private fun TenantDetailField(
             .padding(vertical = 3.dp)
             .clickable(enabled = onClick != null) { onClick?.invoke() },
         color = if (onClick != null) MaterialTheme.colorScheme.primary else Color.Unspecified
+    )
+}
+
+@Composable
+private fun TenantLeaseEndField(tenant: TenantRecord) {
+    val status = leaseStatus(tenant.leaseEnd)
+    val statusColor = leaseStatusColor(status)
+    val highlighted = statusColor != Color.Transparent
+    Text(
+        "Дата окончания: ${tenant.leaseEnd.ifBlank { "—" }} • ${leaseStatusLabel(status)}",
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp)
+            .then(
+                if (highlighted) {
+                    Modifier
+                        .background(statusColor.copy(alpha = 0.16f))
+                        .border(1.dp, statusColor.copy(alpha = 0.7f))
+                        .padding(horizontal = 8.dp, vertical = 5.dp)
+                } else {
+                    Modifier
+                }
+            ),
+        color = if (highlighted) statusColor else Color.Unspecified
     )
 }
 
