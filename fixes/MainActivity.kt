@@ -1454,6 +1454,7 @@ private fun importedSectionAndType(value: String): Pair<String, String> {
     ) source else beforeSlash
     val upper = source.uppercase()
     val type = when {
+        upper.startsWith("СТ-") -> "помещение РТС"
         upper.startsWith("ЦБ") || upper.contains("ЦБ") -> "банкомат"
         upper.startsWith("Ц") || afterSlash.contains("Ц", ignoreCase = true) -> "цоколь"
         upper.startsWith("П") || afterSlash.contains("П", ignoreCase = true) -> "паркинг"
