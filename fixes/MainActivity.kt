@@ -1434,13 +1434,35 @@ private fun TimeSettingsDialog(
     )
 }
 
-private data class TenantImportPreview(val rows: List<TenantRecord>, val total: Int)
+private data class TenantImportSkippedRow(val rowNumber: Int, val reason: String)
+private data class TenantImportPreview(
+    val rows: List<TenantRecord>,
+    val total: Int,
+    val sourceRows: Int,
+    val skipped: List<TenantImportSkippedRow>
+)
 
 private fun normalizeHeader(value: String): String =
     value.lowercase(Locale("ru")).replace("ё", "е").replace(Regex("[^а-яa-z0-9]"), "")
 
-private fun normalizeImportedSection(value: String): String =
-    value.trim().substringBefore('/').trim()
+private fun importedSectionAndType(value: String): Pair<String, String> {
+    val source = value.trim()
+    val beforeSlash = source.substringBefore('/').trim()
+    val afterSlash = source.substringAfter('/', "").trim()
+    val section = if (beforeSlash.length == 1 && beforeSlash.uppercase() in setOf("Ц", "П", "С") &&
+        afterSlash.any(Char::isDigit)
+    ) source else beforeSlash
+    val upper = source.uppercase()
+    val type = when {
+        upper.startsWith("ЦБ") || upper.contains("ЦБ") -> "банкомат"
+        upper.startsWith("Ц") || afterSlash.contains("Ц", ignoreCase = true) -> "цоколь"
+        upper.startsWith("П") || afterSlash.contains("П", ignoreCase = true) -> "паркинг"
+        upper.startsWith("С") || afterSlash.contains("С", ignoreCase = true) -> "склады"
+        afterSlash.contains("О", ignoreCase = true) || beforeSlash.endsWith("-О", ignoreCase = true) -> "офис"
+        else -> ""
+    }
+    return section to type
+}
 
 private fun normalizeImportedLeaseDate(value: String): String {
     val normalized = value.trim().trim('"', '\'')
@@ -1480,7 +1502,8 @@ private fun parseTenantXlsx(context: Context, uri: Uri): TenantImportPreview {
         }
     }
     val sheet = entries["xl/worksheets/sheet1.xml"] ?: error("В XLSX не найден первый лист")
-    val rows = mutableListOf<List<String>>()
+    data class RawRow(val number: Int, val values: List<String>)
+    val rows = mutableListOf<RawRow>()
     val parser = Xml.newPullParser().apply { setInput(ByteArrayInputStream(sheet), "UTF-8") }
     var current = mutableMapOf<Int, String>()
     var rowNumber = 0
@@ -1495,7 +1518,10 @@ private fun parseTenantXlsx(context: Context, uri: Uri): TenantImportPreview {
     while (parser.next() != XmlPullParser.END_DOCUMENT) {
         when (parser.eventType) {
             XmlPullParser.START_TAG -> when (parser.name) {
-                "row" -> { current = mutableMapOf(); rowNumber++ }
+                "row" -> {
+                    current = mutableMapOf()
+                    rowNumber = parser.getAttributeValue(null, "r")?.toIntOrNull() ?: (rowNumber + 1)
+                }
                 "c" -> {
                     cellIndex = columnNumber(parser.getAttributeValue(null, "r") ?: "A$rowNumber")
                     cellType = parser.getAttributeValue(null, "t") ?: ""
@@ -1512,7 +1538,7 @@ private fun parseTenantXlsx(context: Context, uri: Uri): TenantImportPreview {
                 }
                 "row" -> if (current.isNotEmpty()) {
                     val max = current.keys.maxOrNull() ?: 0
-                    rows += (1..max).map { current[it].orEmpty() }
+                    rows += RawRow(rowNumber, (1..max).map { current[it].orEmpty() })
                 }
             }
         }
@@ -1529,7 +1555,7 @@ private fun parseTenantXlsx(context: Context, uri: Uri): TenantImportPreview {
         "email" to setOf("email", "электроннаяпочта", "почта", "emailарендатора"),
         "address" to setOf("адрес", "адресарендатора", "address")
     )
-    val headers = rows.first().map { normalizeHeader(it) }
+    val headers = rows.first().values.map { normalizeHeader(it) }
     val columns = aliases.mapValues { (_, names) -> headers.indexOfFirst { it in names } }.toMutableMap()
     val sourceFormat = headers.getOrNull(0) == "номер" &&
         headers.getOrNull(2) in aliases.getValue("tenant")
@@ -1550,14 +1576,38 @@ private fun parseTenantXlsx(context: Context, uri: Uri): TenantImportPreview {
     if (columns["section"] ?: -1 < 0 || columns["tenant"] ?: -1 < 0)
         error("Не найдены обязательные заголовки. Ожидаются «Номер» (или «Секция») и «Наименование арендатора» (или «Арендатор»).")
     fun value(row: List<String>, key: String) = row.getOrNull(columns[key] ?: -1).orEmpty().trim()
-    val records = rows.drop(1).mapNotNull { row ->
-        val section = normalizeImportedSection(value(row, "section"))
+    val skipped = mutableListOf<TenantImportSkippedRow>()
+    val records = rows.drop(1).mapNotNull { rawRow ->
+        val row = rawRow.values
+        val (section, sourceType) = importedSectionAndType(value(row, "section"))
         val tenant = value(row, "tenant")
-        if (section.isBlank() || tenant.isBlank()) null
-        else TenantRecord(section, value(row, "floor"), normalizeImportedLeaseDate(value(row, "lease")), tenant, value(row, "brand"), value(row, "activity"), value(row, "phone"), value(row, "email"), value(row, "address"))
-    }.distinctBy { it.section to it.tenant }
+        if (section.isBlank() || tenant.isBlank()) {
+            if (row.any { it.isNotBlank() }) {
+                skipped += TenantImportSkippedRow(
+                    rawRow.number,
+                    when {
+                        section.isBlank() && tenant.isBlank() -> "пустые «Номер» и «Наименование арендатора»"
+                        section.isBlank() -> "пустой «Номер»"
+                        else -> "пустое «Наименование арендатора»"
+                    }
+                )
+            }
+            null
+        }
+        else TenantRecord(
+            section,
+            value(row, "floor").ifBlank { sourceType },
+            normalizeImportedLeaseDate(value(row, "lease")),
+            tenant,
+            value(row, "brand"),
+            value(row, "activity"),
+            value(row, "phone"),
+            value(row, "email"),
+            value(row, "address")
+        )
+    }
     if (records.isEmpty()) error("В XLSX нет строк арендаторов")
-    return TenantImportPreview(records, records.size)
+    return TenantImportPreview(records, records.size, rows.size - 1, skipped)
 }
 
 private data class TenantMergeSummary(val added: Int, val updated: Int, val skipped: Int)
@@ -2084,8 +2134,14 @@ private fun TenantListDialog(
             title = { Text("Предпросмотр XLSX") },
             text = {
                 Column {
-                    Text("Найдено записей: ${preview.total}")
+                    Text("Найдено записей: ${preview.total} из строк данных: ${preview.sourceRows}")
                     preview.rows.take(5).forEach { row -> Text("${row.section} — ${row.tenant}", style = MaterialTheme.typography.bodySmall) }
+                    if (preview.skipped.isNotEmpty()) {
+                        Text(
+                            "Пропущены строки: ${preview.skipped.joinToString("; ") { "${it.rowNumber} (${it.reason})" }}",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
                 }
             },
             dismissButton = { TextButton(onClick = { importPreview = null }) { Text("Отмена") } },
