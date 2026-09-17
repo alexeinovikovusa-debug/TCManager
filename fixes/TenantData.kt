@@ -1,6 +1,60 @@
 package com.example.tcmanager.data
 
+import androidx.room.*
+import kotlinx.coroutines.flow.Flow
+
 data class TenantRecord(val section: String, val floorOrType: String, val leaseEnd: String, val tenant: String, val brand: String, val activity: String, val phone: String, val email: String, val address: String)
+
+@Entity(tableName = "imported_tenants", primaryKeys = ["section", "tenant"])
+data class ImportedTenant(
+    val section: String,
+    val tenant: String,
+    val floorOrType: String = "",
+    val leaseEnd: String = "",
+    val brand: String = "",
+    val activity: String = "",
+    val phone: String = "",
+    val email: String = "",
+    val address: String = ""
+) {
+    fun record() = TenantRecord(section, floorOrType, leaseEnd, tenant, brand, activity, phone, email, address)
+    companion object {
+        fun from(record: TenantRecord) = ImportedTenant(record.section, record.tenant, record.floorOrType, record.leaseEnd, record.brand, record.activity, record.phone, record.email, record.address)
+    }
+}
+
+@Entity(tableName = "tenant_import_backups")
+data class TenantImportBackup(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val backedUpAt: Long,
+    val section: String,
+    val tenant: String,
+    val floorOrType: String,
+    val leaseEnd: String,
+    val brand: String,
+    val activity: String,
+    val phone: String,
+    val email: String,
+    val address: String
+)
+
+@Dao
+interface TenantImportDao {
+    @Query("SELECT * FROM imported_tenants ORDER BY section, tenant")
+    fun observe(): Flow<List<ImportedTenant>>
+
+    @Query("SELECT * FROM imported_tenants")
+    suspend fun all(): List<ImportedTenant>
+
+    @Query("SELECT * FROM imported_tenants WHERE section = :section AND tenant = :tenant LIMIT 1")
+    suspend fun find(section: String, tenant: String): ImportedTenant?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(row: ImportedTenant)
+
+    @Insert
+    suspend fun backup(rows: List<TenantImportBackup>)
+}
 
 object TenantSeed {
     private val rows: List<List<String>> = listOf(
