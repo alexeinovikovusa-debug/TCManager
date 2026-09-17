@@ -64,6 +64,7 @@ import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
+import java.time.format.ResolverStyle
 import java.time.temporal.ChronoUnit
 import java.util.Locale
 import java.util.Calendar
@@ -1051,17 +1052,32 @@ private enum class LeaseStatusFilter(val label: String) {
     NOT_SOON("Не скоро")
 }
 
-private val LEASE_DATE_FORMATTER = DateTimeFormatter.ofPattern("dd.MM.yyyy")
+private val LEASE_DATE_FORMATTERS = listOf(
+    DateTimeFormatter.ofPattern("dd.MM.uuuu").withResolverStyle(ResolverStyle.STRICT),
+    DateTimeFormatter.ofPattern("dd/MM/uuuu").withResolverStyle(ResolverStyle.STRICT),
+    DateTimeFormatter.ofPattern("uuuu-MM-dd").withResolverStyle(ResolverStyle.STRICT)
+)
+
+private fun parseLeaseEnd(value: String): LocalDate? {
+    val normalized = value.trim().trim('"', '\'')
+    if (normalized.isBlank()) {
+        return null
+    }
+
+    return LEASE_DATE_FORMATTERS.firstNotNullOfOrNull { formatter ->
+        try {
+            LocalDate.parse(normalized, formatter)
+        } catch (_: DateTimeParseException) {
+            null
+        }
+    }
+}
 
 private fun leaseStatus(
     leaseEnd: String,
     today: LocalDate = LocalDate.now()
 ): LeaseStatus {
-    val endDate = try {
-        LocalDate.parse(leaseEnd.trim(), LEASE_DATE_FORMATTER)
-    } catch (_: DateTimeParseException) {
-        return LeaseStatus.UNKNOWN
-    }
+    val endDate = parseLeaseEnd(leaseEnd) ?: return LeaseStatus.UNKNOWN
     val daysUntilEnd = ChronoUnit.DAYS.between(today, endDate)
     return when {
         daysUntilEnd < 0 -> LeaseStatus.EXPIRED
@@ -1101,8 +1117,7 @@ private fun leaseStatusMatchesFilter(
             status == LeaseStatus.EXPIRING_60 ||
             status == LeaseStatus.EXPIRING_90
         LeaseStatusFilter.EXPIRED -> status == LeaseStatus.EXPIRED
-        LeaseStatusFilter.NOT_SOON -> status == LeaseStatus.NOT_SOON ||
-            status == LeaseStatus.UNKNOWN
+        LeaseStatusFilter.NOT_SOON -> status == LeaseStatus.NOT_SOON
     }
 }
 
@@ -1533,15 +1548,11 @@ private fun TenantListDialog(
     var filters by remember { mutableStateOf(TenantFilters()) }
     var showFiltersDialog by remember { mutableStateOf(false) }
 
-    val tenants = remember(searchText, filters) {
-        TenantSeed.all
-            .filter { tenant ->
-                tenantMatchesFilters(tenant, filters)
-            }
-            .filter { tenant ->
-                searchText.isBlank() || tenantMatchesSearch(tenant, searchText)
-            }
-    }
+    val displayedTenants = TenantSeed.all
+        .filter { tenant -> tenantMatchesFilters(tenant, filters) }
+        .filter { tenant ->
+            searchText.isBlank() || tenantMatchesSearch(tenant, searchText)
+        }
 
     val allSections = remember { TenantSeed.all.map { it.section }.distinct().sorted() }
     val sectionsByFloor = remember {
@@ -1713,12 +1724,19 @@ private fun TenantListDialog(
                     modifier = Modifier.heightIn(max = 400.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    if (tenants.isEmpty()) {
+                    if (displayedTenants.isEmpty()) {
                         item {
-                            Text("Ничего не найдено")
+                            Text(
+                                if (filters.leaseStatusFilter == LeaseStatusFilter.ALL) {
+                                    "Ничего не найдено"
+                                } else {
+                                    "Нет арендаторов для статуса «${filters.leaseStatusFilter.label}» " +
+                                        "с выбранными дополнительными фильтрами"
+                                }
+                            )
                         }
                     } else {
-                        items(tenants, key = { it.section + it.tenant }) { tenant ->
+                        items(displayedTenants, key = { it.section + it.tenant }) { tenant ->
                             val status = leaseStatus(tenant.leaseEnd)
                             val statusColor = leaseStatusColor(status)
                             Card(
@@ -1736,7 +1754,14 @@ private fun TenantListDialog(
                                     .clickable { selectedTenant = tenant }
                             ) {
                                 Column(modifier = Modifier.padding(10.dp)) {
-                                    Text(tenant.section, style = MaterialTheme.typography.labelMedium)
+                                    Text(
+                                        tenant.section,
+                                        modifier = Modifier.clickable {
+                                            selectedTenant = tenant
+                                        },
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
                                     Text(tenant.tenant, style = MaterialTheme.typography.titleSmall)
                                     if (tenant.brand.isNotBlank()) {
                                         Text(tenant.brand, style = MaterialTheme.typography.bodyMedium)
